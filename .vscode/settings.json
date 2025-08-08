@@ -1,0 +1,8 @@
+{
+    "idf.espIdfPath": "/home/gabriel/esp/v5.4/esp-idf",
+    "idf.toolsPath": "/home/gabriel/.espressif",
+    "idf.pythonInstallPath": "/usr/bin/python3",
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+    "C_Cpp.default.compilerPath": "/home/gabriel/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/bin/xtensa-esp32-elf-gcc"
+}
+    
