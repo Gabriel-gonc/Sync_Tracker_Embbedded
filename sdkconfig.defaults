@@ -2,6 +2,6 @@
 # Espressif IoT Development Framework (ESP-IDF) 5.4.0 Project Minimal Configuration
 #
 CONFIG_ESP_WIFI_SSID="Sync_Tracker"
-CONFIG_ESP_WIFI_PASSWORD="$@FLAMENGO"
+CONFIG_ESP_WIFI_PASSWORD="synctraker"
 CONFIG_ESP_MAX_STA_CONN=1
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
