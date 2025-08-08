@@ -3,6 +3,13 @@
     "idf.toolsPath": "/home/gabriel/.espressif",
     "idf.pythonInstallPath": "/usr/bin/python3",
     "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
-    "C_Cpp.default.compilerPath": "/home/gabriel/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/bin/xtensa-esp32-elf-gcc"
+    "C_Cpp.default.compilerPath": "/home/gabriel/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/bin/xtensa-esp32-elf-gcc",
+    "idf.port": "/dev/ttyUSB0",
+    "idf.flashType": "UART",
+    "files.associations": {
+        "project_types.h": "c",
+        "freertos.h": "c",
+        "wifi_acess_point.h": "c"
+    }
 }
     
