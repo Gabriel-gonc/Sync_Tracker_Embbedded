@@ -94,7 +94,6 @@ static void system_callback(system_event_t event)
 {
     switch (event) {
         case SYSTEM_WIFI_CONNECTED:
-            // ESP_LOGI(MAIN_TAG, "WiFi connected");
             xEventGroupSetBits(main_event_group, WIFI_CONNECTED_BIT);
             break;
         case SYSTEM_WIFI_DISCONNECTED:
