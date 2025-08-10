@@ -26,6 +26,7 @@
 #define CMD_ACK "ACK"
 #define CMD_NACK "NACK"
 #define MSG_MON "MONITORING"
+#define MSG_FNSH_MON "FINISH_MONITORING"
 #define MSG_OP "OPERATIONAL"
 
 /***********************************************************
@@ -40,6 +41,8 @@ typedef enum {
 
 /** @brief System States */
 typedef enum {
+    MSG_RECEIVED,
+    NO_MSG_RECEIVED,
     STATE_IDLE,
     STATE_CONNECTED,
     STATE_MONITORING,

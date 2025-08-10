@@ -46,26 +46,25 @@ void udp_socket_init(void)
 
     struct sockaddr_in local_addr = {
         .sin_family = AF_INET,
-        .sin_port = htons(3333),            // Porta local fixa para ESCUTAR
-        .sin_addr.s_addr = htonl(INADDR_ANY) // Aceita em qualquer IP local
+        .sin_port = htons(3333),
+        .sin_addr.s_addr = htonl(INADDR_ANY)
     };
 
     sock = socket(addr_family, SOCK_DGRAM, ip_protocol);
     if (sock < 0) {
-        // ESP_LOGE(UDP_TAG, "Unable to create socket: errno %d", errno);
         return;
     }
-    // ESP_LOGI(UDP_TAG, "Socket created");
+
+    // Configura o socket para non-blocking
+    int flags = fcntl(sock, F_GETFL, 0);
+    fcntl(sock, F_SETFL, flags | O_NONBLOCK);
 
     int err = bind(sock, (struct sockaddr *)&local_addr, sizeof(local_addr));
     if (err < 0) {
-        // ESP_LOGE(UDP_TAG, "Socket unable to bind: errno %d", errno);
         close(sock);
         sock = -1;
         return;
     }
-
-    // ESP_LOGI(UDP_TAG, "Socket bound to port %d", 3333);
 }
 
 esp_err_t udp_socket_send(char *data, int len)

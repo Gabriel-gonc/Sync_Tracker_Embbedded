@@ -26,7 +26,7 @@
  * Function Prototypes
 ***********************************************************/
 static void system_callback(system_event_t event);
-static system_state_t trait_messages(bool hand_shaking, bool state_comp);
+static system_state_t trait_messages(bool hand_shaking, bool state_comp, bool check_msg);
 static void time_difference_mock();
 
 /***********************************************************
@@ -63,20 +63,49 @@ void app_main(void)
     udp_socket_init();
 
     /* Establishing connection */
-    current_state = trait_messages(true, false);
+    current_state = trait_messages(true, false, false);
     if (current_state != STATE_CONNECTED)
     {
         ESP_LOGE(MAIN_TAG, "Failed to establish connection!");
         esp_restart();
     }
 
-    /* Receiving next state command */
-    current_state = trait_messages(false, true);
-    
-    /* Mocking monitoring data */
-    if (current_state == STATE_MONITORING)
+    while (1)
     {
-        time_difference_mock();
+        /* Receiving next state command */
+        ESP_LOGI(MAIN_TAG, "Waiting next CMD");
+        current_state = trait_messages(false, true, false);
+
+        /* Mocking monitoring data */
+        if (current_state == STATE_MONITORING)
+        {
+            while (1)
+            {
+                /* Simulate time difference data */
+                time_difference_mock();
+
+                /* Check if Finish Monitoring MSG hsa been received */
+                system_state_t msg_received = trait_messages(false, false, true);
+                
+                if (msg_received == MSG_RECEIVED)
+                {
+                    if (strncmp(udp_receive_buffer, MSG_FNSH_MON, strlen(MSG_FNSH_MON)) == 0)
+                    {
+                        current_state = STATE_CONNECTED;
+                        int len = snprintf(udp_send_buffer, sizeof(udp_send_buffer), "%s", CMD_ACK);
+                        udp_socket_send(udp_send_buffer, len);
+                        ESP_LOGI(MAIN_TAG, "Received Finish Monitoring");
+                        break;
+                    }
+                    else 
+                    {
+                        int len = snprintf(udp_send_buffer, sizeof(udp_send_buffer), "%s", CMD_NACK);
+                        udp_socket_send(udp_send_buffer, len);
+                        ESP_LOGE(MAIN_TAG, "Waiting Finish Monitoring");
+                    }
+                }
+            }
+        }
     }
 
     /* Main loop. */
@@ -112,14 +141,14 @@ static void system_callback(system_event_t event)
  * @param hand_shaking True for hand-shaking process, false otherwise
  * @param state_comp True for state setting process, false otherwise
  */
-static system_state_t trait_messages(bool hand_shaking, bool state_comp)
+static system_state_t trait_messages(bool hand_shaking, bool state_comp, bool check_msg)
 {
     while (1)
     {
         int bytes_received = udp_socket_receive(udp_receive_buffer, sizeof(udp_receive_buffer));
         if (bytes_received > 0)
         {
-            if (hand_shaking && !state_comp)
+            if (hand_shaking && !state_comp && !check_msg)
             {
                 if (strncmp(udp_receive_buffer, MSG_SYNC, strlen(MSG_SYNC)) == 0)
                 {
@@ -135,7 +164,7 @@ static system_state_t trait_messages(bool hand_shaking, bool state_comp)
                 }
             }
 
-            if (state_comp && !hand_shaking)
+            else if (state_comp && !hand_shaking && !check_msg)
             {
                 if (strncmp(udp_receive_buffer, MSG_MON, strlen(MSG_MON)) == 0)
                 {
@@ -158,8 +187,18 @@ static system_state_t trait_messages(bool hand_shaking, bool state_comp)
                     udp_socket_send(udp_send_buffer, len);
                 }
             }
+
+            else if (check_msg && !hand_shaking && !state_comp)
+            {
+                return MSG_RECEIVED;
+            }   
         }
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        
+        else if (check_msg)
+        {
+            return NO_MSG_RECEIVED;
+        }
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     }
 }
 
@@ -168,27 +207,24 @@ static void time_difference_mock()
 {
     uint16_t delay_time = (uint16_t)((NUM_CYCLES_DIFF_PULSE / SENSOR_FREQUENCY) * 1000);
 
-    while (true)
+    for (uint16_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
     {
-        for (uint16_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
-        {
-            time_difference[i] = 10000 + 100 * i; 
-        }
-
-        /* Simulate grid sampling delay */
-        vTaskDelay(delay_time / portTICK_PERIOD_MS);
-
-        uint16_t pos = 0;
-        for (uint16_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
-        {
-            int len = snprintf((udp_send_buffer + pos), (sizeof(udp_send_buffer) - pos), "%u,", time_difference[i]);
-            pos += len;
-        }
-
-        /* Avoid send the null terminator. */
-        pos = pos - 1;
-        udp_socket_send(udp_send_buffer, pos);
+        time_difference[i] = 10000 + 100 * i; 
     }
+
+    /* Simulate grid sampling delay */
+    vTaskDelay(delay_time / portTICK_PERIOD_MS);
+
+    uint16_t pos = 0;
+    for (uint16_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
+    {
+        int len = snprintf((udp_send_buffer + pos), (sizeof(udp_send_buffer) - pos), "%u,", time_difference[i]);
+        pos += len;
+    }
+
+    /* Avoid send the null terminator. */
+    pos = pos - 1;
+    udp_socket_send(udp_send_buffer, pos);
 }
 
 /***********************************************************
