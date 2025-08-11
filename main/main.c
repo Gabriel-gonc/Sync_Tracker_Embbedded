@@ -83,7 +83,7 @@ void app_main(void)
                 /* Simulate time difference data */
                 time_difference_mock();
 
-                /* Check if Finish Monitoring MSG hsa been received */
+                /* Check if Finish Monitoring MSG has been received */
                 system_state_t msg_received = trait_messages(false, false, true);
                 
                 if (msg_received == MSG_RECEIVED)
@@ -109,7 +109,7 @@ void app_main(void)
                 }
                 break;
             }
-            
+
             default:
                 break;
         }
