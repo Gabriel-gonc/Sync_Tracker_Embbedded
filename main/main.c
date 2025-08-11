@@ -70,16 +70,15 @@ void app_main(void)
         esp_restart();
     }
 
+    /* Receiving next state command */
+    ESP_LOGI(MAIN_TAG, "Waiting next CMD");
+    current_state = trait_messages(false, true, false);
+
     while (1)
     {
-        /* Receiving next state command */
-        ESP_LOGI(MAIN_TAG, "Waiting next CMD");
-        current_state = trait_messages(false, true, false);
-
-        /* Mocking monitoring data */
-        if (current_state == STATE_MONITORING)
+        switch (current_state)
         {
-            while (1)
+            case STATE_MONITORING:
             {
                 /* Simulate time difference data */
                 time_difference_mock();
@@ -95,6 +94,10 @@ void app_main(void)
                         int len = snprintf(udp_send_buffer, sizeof(udp_send_buffer), "%s", CMD_ACK);
                         udp_socket_send(udp_send_buffer, len);
                         ESP_LOGI(MAIN_TAG, "Received Finish Monitoring");
+
+                        /* Receiving next state command */
+                        ESP_LOGI(MAIN_TAG, "Waiting next CMD");
+                        current_state = trait_messages(false, true, false);
                         break;
                     }
                     else 
@@ -104,7 +107,11 @@ void app_main(void)
                         ESP_LOGE(MAIN_TAG, "Waiting Finish Monitoring");
                     }
                 }
+                break;
             }
+            
+            default:
+                break;
         }
     }
 
