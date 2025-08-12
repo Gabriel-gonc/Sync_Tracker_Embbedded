@@ -12,15 +12,18 @@
 #include "driver/gpio.h"
 #include "esp_timer.h"
 #include "esp_log.h"
+#include "esp_err.h"
 
 #include "wifi_acess_point.h"
 #include "socket_udp.h"
 #include "project_types.h"
+#include "gpio_control.h"
 
 /***********************************************************
  * Defines
 ***********************************************************/
 #define MAIN_TAG "MAIN"
+#define QUEUE_TIME_DIFF_MAIN_LENGHT 10
 
 /***********************************************************
  * Function Prototypes
@@ -33,7 +36,7 @@ static void time_difference_mock();
  * Variables
 ***********************************************************/
 /** @brief Array to store the time difference between sensor and grid pulses */
-static volatile uint64_t time_difference[NUM_CYCLES_DIFF_PULSE] = {0};
+static volatile uint16_t time_difference[NUM_CYCLES_DIFF_PULSE] = {0};
 
 /** @brief Event Group variables. */
 EventGroupHandle_t main_event_group = NULL;
@@ -46,6 +49,9 @@ char udp_send_buffer[UDP_TX_BUFFER_SIZE] = {0};
 /** @brief Variable to store current System State */
 static volatile system_state_t current_state = STATE_IDLE;
 
+/** @brief Queue to take diff buffer already filled */
+QueueHandle_t queue_time_difference_main = NULL;
+
 /***********************************************************
  * Main Function
 ***********************************************************/
@@ -53,6 +59,14 @@ void app_main(void)
 {
     /* Create event group */
     main_event_group = xEventGroupCreate();
+
+    /* Create queue */
+    queue_time_difference_main = xQueueCreate(QUEUE_TIME_DIFF_MAIN_LENGHT, sizeof(time_difference));
+    if (queue_time_difference_main == NULL) 
+    {
+        ESP_LOGE(MAIN_TAG, "Failed to create queue");
+        esp_restart();
+    }
 
     /* Init wifi*/
     wifi_init_softap();
@@ -108,6 +122,22 @@ void app_main(void)
                     }
                 }
                 break;
+
+                /* Real implementation */
+                esp_err_t err = time_difference_function(queue_time_difference_main);
+                
+                xQueueReceive(queue_time_difference, &time_difference[i], portMAX_DELAY) != pdTRUE
+                
+                uint16_t pos = 0;
+                for (uint16_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
+                {
+                    int len = snprintf((udp_send_buffer + pos), (sizeof(udp_send_buffer) - pos), "%u,", time_difference[i]);
+                    pos += len;
+                }
+
+                /* Avoid send the null terminator. */
+                pos = pos - 1;
+                udp_socket_send(udp_send_buffer, pos);
             }
 
             default:
@@ -225,7 +255,7 @@ static void time_difference_mock()
     uint64_t pos = 0;
     for (uint64_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
     {
-        int len = snprintf((udp_send_buffer + pos), (sizeof(udp_send_buffer) - pos), "%llu,", time_difference[i]);
+        int len = snprintf((udp_send_buffer + pos), (sizeof(udp_send_buffer) - pos), "%u,", time_difference[i]);
         pos += len;
     }
 

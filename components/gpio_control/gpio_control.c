@@ -6,6 +6,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/queue.h"
 
 #include "project_types.h"
 
@@ -39,6 +40,7 @@ static volatile uint64_t delta_time_freq_grid = 0;
 /** @brief Var to sign sensor pulse ready to calculate time difference */
 static volatile bool sensor_pulse_ready = false;
 
+/** @brief Queue to send diff time from ISR to time difference function */
 QueueHandle_t queue_time_difference = NULL;
 
 /**********************************************************
@@ -58,14 +60,15 @@ static void IRAM_ATTR grid_itr_callback(void *arg)
     }
     else 
     {
-        delta_time_freq_grid = esp_timer_get_time() - T_firstpulse_grid;
+        volatile uint64_t time_now = esp_timer_get_time();
+        delta_time_freq_grid = time_now - T_firstpulse_grid;
         if (delta_time_freq_grid > GRID_WINDOW_FILTER) 
         {
-            T_firstpulse_grid = esp_timer_get_time();
+            T_firstpulse_grid = time_now;
         
             if(sensor_pulse_ready) 
             {
-                uint64_t time_diff = T_firstpulse_grid - sensor_pulse_moment_reference;
+                uint16_t time_diff = (uint16_t)(T_firstpulse_grid - sensor_pulse_moment_reference);
                 xQueueSendFromISR(queue_time_difference, &time_diff, NULL);
                 sensor_pulse_ready = false;
             } 
@@ -82,11 +85,12 @@ static void IRAM_ATTR sensor_itr_callback(void *arg)
     }
     else 
     {
-        delta_time_freq_sensor = esp_timer_get_time() - T_firstpulse_sensor;
+        volatile uint64_t time_now = esp_timer_get_time();
+        delta_time_freq_sensor = time_now - T_firstpulse_sensor;
         if (delta_time_freq_sensor > SENSOR_WINDOW_FILTER)
         {
             /* Update period time reference */
-            T_firstpulse_sensor = esp_timer_get_time();
+            T_firstpulse_sensor = time_now;
 
             /* Enable grid ISR to calculate time difference */
             if (!sensor_pulse_ready)
@@ -102,14 +106,7 @@ static void IRAM_ATTR sensor_itr_callback(void *arg)
 /*********************************************************
  * Private Functions
 *********************************************************/
-static void time_difference_function()
-{
-    uint64_t time_diff = 0;
-    if (xQueueReceive(queue_time_difference, &time_diff, portMAX_DELAY) == pdTRUE)
-    {
-        // Process the received time difference
-    }
-}
+
 
 
 /*********************************************************
@@ -119,7 +116,7 @@ static void time_difference_function()
 esp_err_t gpio_init(void)
 {   
     /* Create a queue to hold time difference values */
-    queue_time_difference = xQueueCreate(QUEUE_TIME_DIFF_LENGTH, sizeof(uint64_t));
+    queue_time_difference = xQueueCreate(QUEUE_TIME_DIFF_LENGTH, sizeof(uint32_t));
     if (queue_time_difference == NULL) 
     {
         ESP_LOGE("GPIO_CONTROL", "Failed to create queue");
@@ -151,5 +148,27 @@ esp_err_t gpio_init(void)
     gpio_isr_handler_add(SENSOR_PIN, sensor_itr_callback, NULL);
 
     return ESP_OK;
+}
+
+esp_err_t time_difference_function(QueueHandle_t queue_time_difference_main)
+{
+    /* Fill diff buffer with data from ISR */
+    uint16_t time_diff[NUM_CYCLES_DIFF_PULSE] = {0};
+    for (uint16_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
+    {
+        if (xQueueReceive(queue_time_difference, &time_diff[i], portMAX_DELAY) != pdTRUE)
+        {
+            return ESP_FAIL;
+        }
+    }
+
+    /* Send diff buffer to main application */
+    if (queue_time_difference_main != NULL)
+    {
+        if (xQueueSend(queue_time_difference_main, &time_diff, portMAX_DELAY) == pdTRUE)
+            return ESP_OK;
+    }
+
+    return ESP_FAIL;
 }
 
