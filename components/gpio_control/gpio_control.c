@@ -134,9 +134,11 @@ esp_err_t gpio_init(void)
     io_conf.pin_bit_mask = (1ULL<<ELETRIC_GRID_PIN);
     io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
     io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
-
     gpio_config(&io_conf);
+
+    /* Start interrupts on pause */
     gpio_isr_handler_add(ELETRIC_GRID_PIN, grid_itr_callback, NULL);
+    gpio_intr_disable(ELETRIC_GRID_PIN);
 
     /* Config for Sensor Signal */
     io_conf.intr_type = GPIO_INTR_NEGEDGE;
@@ -144,9 +146,11 @@ esp_err_t gpio_init(void)
     io_conf.pin_bit_mask = (1ULL<<SENSOR_PIN);
     io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
     io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
-
     gpio_config(&io_conf);
+
+    /* Start interrupts on pause */
     gpio_isr_handler_add(SENSOR_PIN, sensor_itr_callback, NULL);
+    gpio_intr_disable(SENSOR_PIN);
 
     return ESP_OK;
 }
@@ -174,3 +178,16 @@ esp_err_t time_difference_function(QueueHandle_t queue_time_difference_main)
     return ESP_FAIL;
 }
 
+void gpio_enable_interrupts(void)
+{
+    /* Enable interrupts for grid and sensor */
+    gpio_intr_enable(ELETRIC_GRID_PIN);
+    gpio_intr_enable(SENSOR_PIN);
+}
+
+void gpio_disable_interrupts(void)
+{
+    /* Disable interrupts for grid and sensor */
+    gpio_intr_disable(ELETRIC_GRID_PIN);
+    gpio_intr_disable(SENSOR_PIN);
+}

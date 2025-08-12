@@ -9,7 +9,6 @@
 #include "freertos/queue.h"
 #include "freertos/event_groups.h"
 
-#include "driver/gpio.h"
 #include "esp_timer.h"
 #include "esp_log.h"
 #include "esp_err.h"
@@ -70,6 +69,13 @@ void app_main(void)
         esp_restart();
     }
 
+    /* GPIO Init */  //DISCOMMENT!
+    // if (gpio_init() != ESP_OK)
+    // {
+    //     ESP_LOGE(MAIN_TAG, "Failed to initialize GPIO");
+    //     esp_restart();
+    // }
+
     /* Init wifi*/
     wifi_init_softap();
     wifi_get_callback(system_callback);
@@ -90,6 +96,10 @@ void app_main(void)
     ESP_LOGI(MAIN_TAG, "Waiting next CMD");
     current_state = trait_messages(false, true, false);
 
+    /* Enable gpio interrupts */
+    gpio_enable_interrupts();
+    gpio_disable_interrupts();
+
     while (1)
     {
         switch (current_state)
@@ -104,7 +114,7 @@ void app_main(void)
                 break;
 
                 // /* Take and send sensor to grid pulse diff time */
-                // process_sensor_to_grid_diff_time();
+                // process_sensor_to_grid_diff_time(); //DISCOMMENT!
 
                 // /* Check state exit criteria */
                 // check_state_exit(MSG_FNSH_MON);
@@ -225,12 +235,19 @@ static void check_state_exit(char* msg_exit_criteria)
     {
         if (strncmp(udp_receive_buffer, msg_exit_criteria, strlen(msg_exit_criteria)) == 0)
         {
+            /* Disable interrupts */
+            gpio_disable_interrupts();
+
+            /* Send ACK CMD */
             int len = snprintf(udp_send_buffer, sizeof(udp_send_buffer), "%s", CMD_ACK);
             udp_socket_send(udp_send_buffer, len);
 
             /* Receiving next state command */
             ESP_LOGI(MAIN_TAG, "Waiting next state CMD");
             current_state = trait_messages(false, true, false);
+
+            /* Enable gpio interrupts */
+            gpio_enable_interrupts();
             return;
         }
         else 

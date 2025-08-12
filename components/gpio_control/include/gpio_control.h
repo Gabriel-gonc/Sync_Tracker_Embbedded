@@ -14,4 +14,8 @@ esp_err_t gpio_init(void);
 
 esp_err_t time_difference_function(QueueHandle_t queue_time_difference_main);
 
+void gpio_enable_interrupts(void);
+
+void gpio_disable_interrupts(void);
+
 #endif // GPIO_CONTROL_H
