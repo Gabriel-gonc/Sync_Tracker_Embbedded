@@ -31,6 +31,8 @@
 static void system_callback(system_event_t event);
 static system_state_t trait_messages(bool hand_shaking, bool state_comp, bool check_msg);
 static void time_difference_mock();
+static void check_state_exit(char* msg_exit_criteria);
+static void process_sensor_to_grid_diff_time (void);
 
 /***********************************************************
  * Variables
@@ -97,47 +99,16 @@ void app_main(void)
                 /* Simulate time difference data */
                 time_difference_mock();
 
-                /* Check if Finish Monitoring MSG has been received */
-                system_state_t msg_received = trait_messages(false, false, true);
-                
-                if (msg_received == MSG_RECEIVED)
-                {
-                    if (strncmp(udp_receive_buffer, MSG_FNSH_MON, strlen(MSG_FNSH_MON)) == 0)
-                    {
-                        current_state = STATE_CONNECTED;
-                        int len = snprintf(udp_send_buffer, sizeof(udp_send_buffer), "%s", CMD_ACK);
-                        udp_socket_send(udp_send_buffer, len);
-                        ESP_LOGI(MAIN_TAG, "Received Finish Monitoring");
-
-                        /* Receiving next state command */
-                        ESP_LOGI(MAIN_TAG, "Waiting next CMD");
-                        current_state = trait_messages(false, true, false);
-                        break;
-                    }
-                    else 
-                    {
-                        int len = snprintf(udp_send_buffer, sizeof(udp_send_buffer), "%s", CMD_NACK);
-                        udp_socket_send(udp_send_buffer, len);
-                        ESP_LOGE(MAIN_TAG, "Waiting Finish Monitoring");
-                    }
-                }
+                /* Check state exit criteria */
+                check_state_exit(MSG_FNSH_MON);
                 break;
 
-                /* Real implementation */
-                esp_err_t err = time_difference_function(queue_time_difference_main);
-                
-                xQueueReceive(queue_time_difference, &time_difference[i], portMAX_DELAY) != pdTRUE
-                
-                uint16_t pos = 0;
-                for (uint16_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
-                {
-                    int len = snprintf((udp_send_buffer + pos), (sizeof(udp_send_buffer) - pos), "%u,", time_difference[i]);
-                    pos += len;
-                }
+                // /* Take and send sensor to grid pulse diff time */
+                // process_sensor_to_grid_diff_time();
 
-                /* Avoid send the null terminator. */
-                pos = pos - 1;
-                udp_socket_send(udp_send_buffer, pos);
+                // /* Check state exit criteria */
+                // check_state_exit(MSG_FNSH_MON);
+                // break;
             }
 
             default:
@@ -236,6 +207,63 @@ static system_state_t trait_messages(bool hand_shaking, bool state_comp, bool ch
             return NO_MSG_RECEIVED;
         }
         vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
+}
+
+/** @brief Function to check if the state exit criteria has been received
+ *  If the exit criteria has been received the current_state is updated.
+ *  
+ *  @param msg_exit_criteria Exit criteria received from vision
+ * 
+ */
+static void check_state_exit(char* msg_exit_criteria)
+{
+    /* Check if the exit criteria has been received */
+    system_state_t msg_received = trait_messages(false, false, true);
+    
+    if (msg_received == MSG_RECEIVED)
+    {
+        if (strncmp(udp_receive_buffer, msg_exit_criteria, strlen(msg_exit_criteria)) == 0)
+        {
+            int len = snprintf(udp_send_buffer, sizeof(udp_send_buffer), "%s", CMD_ACK);
+            udp_socket_send(udp_send_buffer, len);
+
+            /* Receiving next state command */
+            ESP_LOGI(MAIN_TAG, "Waiting next state CMD");
+            current_state = trait_messages(false, true, false);
+            return;
+        }
+        else 
+        {
+            int len = snprintf(udp_send_buffer, sizeof(udp_send_buffer), "%s", CMD_NACK);
+            udp_socket_send(udp_send_buffer, len);
+            ESP_LOGE(MAIN_TAG, "Waiting Exit Criteria: %s", msg_exit_criteria);
+            return;
+        }
+    }
+    return;
+}
+
+static void process_sensor_to_grid_diff_time (void)
+{
+    esp_err_t err = time_difference_function(queue_time_difference_main);
+    
+    if (err != ESP_OK)
+    {
+        /* Copy time_difference buffer to transmission while sampling continues */
+        xQueueReceive(queue_time_difference_main, &time_difference, portMAX_DELAY);
+        
+        /* Format the data to transmit */
+        uint16_t pos = 0;
+        for (uint16_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
+        {
+            int len = snprintf((udp_send_buffer + pos), (sizeof(udp_send_buffer) - pos), "%u,", time_difference[i]);
+            pos += len;
+        }
+    
+        /* Send data to vision without null-terminator */
+        pos = pos - 1;
+        udp_socket_send(udp_send_buffer, pos);
     }
 }
 

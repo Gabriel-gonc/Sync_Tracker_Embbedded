@@ -13,8 +13,9 @@
 /*********************************************************
  * Defines
 *********************************************************/
+#define GPIO_CONTROL_TAG "GPIO_CONTROL"
 #define ESP_INTR_FLAG_DEFAULT  ESP_INTR_FLAG_IRAM
-#define QUEUE_TIME_DIFF_LENGTH 10
+#define QUEUE_TIME_DIFF_LENGTH 60 // Arbitrary length for the queue to hold time differences
 
 /*********************************************************
  * Variables
@@ -92,11 +93,12 @@ static void IRAM_ATTR sensor_itr_callback(void *arg)
             /* Update period time reference */
             T_firstpulse_sensor = time_now;
 
-            /* Enable grid ISR to calculate time difference */
             if (!sensor_pulse_ready)
             {
                 /* Take time reference to calculate grid-sensor diff time */
                 sensor_pulse_moment_reference = T_firstpulse_sensor;
+
+                /* Enable grid ISR to calculate time difference and block sensor for a new measure */
                 sensor_pulse_ready = true;
             }
         }
@@ -112,7 +114,6 @@ static void IRAM_ATTR sensor_itr_callback(void *arg)
 /*********************************************************
  * Public Functions
 *********************************************************/
-
 esp_err_t gpio_init(void)
 {   
     /* Create a queue to hold time difference values */
@@ -158,7 +159,8 @@ esp_err_t time_difference_function(QueueHandle_t queue_time_difference_main)
     {
         if (xQueueReceive(queue_time_difference, &time_diff[i], portMAX_DELAY) != pdTRUE)
         {
-            return ESP_FAIL;
+            i -= 1; 
+            ESP_LOGE(GPIO_CONTROL_TAG, "Failed to receive time difference from ISR");
         }
     }
 

@@ -41,6 +41,7 @@ typedef enum {
 
 /** @brief System States */
 typedef enum {
+    EXIT_CRITERIA = -1,
     MSG_RECEIVED,
     NO_MSG_RECEIVED,
     STATE_IDLE,
