@@ -33,7 +33,7 @@ static void time_difference_mock();
  * Variables
 ***********************************************************/
 /** @brief Array to store the time difference between sensor and grid pulses */
-static volatile uint16_t time_difference[NUM_CYCLES_DIFF_PULSE] = {0};
+static volatile uint64_t time_difference[NUM_CYCLES_DIFF_PULSE] = {0};
 
 /** @brief Event Group variables. */
 EventGroupHandle_t main_event_group = NULL;
@@ -212,9 +212,9 @@ static system_state_t trait_messages(bool hand_shaking, bool state_comp, bool ch
 /** @brief Funtion to mock measure of the pulse difference time */
 static void time_difference_mock()
 {
-    uint16_t delay_time = (uint16_t)((NUM_CYCLES_DIFF_PULSE / SENSOR_FREQUENCY) * 1000);
+    uint64_t delay_time = (uint64_t)((NUM_CYCLES_DIFF_PULSE / SENSOR_FREQUENCY) * 1000);
 
-    for (uint16_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
+    for (uint64_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
     {
         time_difference[i] = 10000 + 100 * i; 
     }
@@ -222,10 +222,10 @@ static void time_difference_mock()
     /* Simulate grid sampling delay */
     vTaskDelay(delay_time / portTICK_PERIOD_MS);
 
-    uint16_t pos = 0;
-    for (uint16_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
+    uint64_t pos = 0;
+    for (uint64_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
     {
-        int len = snprintf((udp_send_buffer + pos), (sizeof(udp_send_buffer) - pos), "%u,", time_difference[i]);
+        int len = snprintf((udp_send_buffer + pos), (sizeof(udp_send_buffer) - pos), "%llu,", time_difference[i]);
         pos += len;
     }
 

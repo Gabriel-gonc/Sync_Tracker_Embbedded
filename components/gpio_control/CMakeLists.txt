@@ -1,3 +1,3 @@
 idf_component_register(SRCS "gpio_control.c"
-            PRIV_REQUIRES project_types
+            PRIV_REQUIRES driver esp_timer project_types
             INCLUDE_DIRS "include")

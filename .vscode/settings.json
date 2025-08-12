@@ -9,7 +9,12 @@
     "files.associations": {
         "project_types.h": "c",
         "freertos.h": "c",
-        "wifi_acess_point.h": "c"
+        "wifi_acess_point.h": "c",
+        "inttypes.h": "c",
+        "task.h": "c",
+        "semphr.h": "c",
+        "cstdint": "c",
+        "format": "c"
     }
 }
     
