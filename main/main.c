@@ -37,7 +37,7 @@ static void process_sensor_to_grid_diff_time (void);
  * Variables
 ***********************************************************/
 /** @brief Array to store the time difference between sensor and grid pulses */
-static volatile uint16_t time_difference[NUM_CYCLES_DIFF_PULSE] = {0};
+static uint16_t time_difference[NUM_CYCLES_DIFF_PULSE] = {0};
 
 /** @brief Event Group variables. */
 EventGroupHandle_t main_event_group = NULL;
@@ -95,6 +95,8 @@ void app_main(void)
     /* Receiving next state command */
     ESP_LOGI(MAIN_TAG, "Waiting next CMD");
     current_state = trait_messages(false, true, false);
+    // if (current_state == STATE_MONITORING)
+        // set_diff_time_feature(true); // Enable feature
 
     /* Enable gpio interrupts */
     gpio_enable_interrupts();
@@ -118,7 +120,10 @@ void app_main(void)
 
                 // /* Check state exit criteria */
                 // check_state_exit(MSG_FNSH_MON);
+                // if (current_state != STATE_MONITORING)
+                //  set_diff_time_feature(false); // Disable feature
                 // break;
+
             }
 
             default:
@@ -247,6 +252,7 @@ static void check_state_exit(char* msg_exit_criteria)
             current_state = trait_messages(false, true, false);
 
             /* Enable gpio interrupts */
+            // if (current_state != STATE_IDLE)
             gpio_enable_interrupts();
             return;
         }

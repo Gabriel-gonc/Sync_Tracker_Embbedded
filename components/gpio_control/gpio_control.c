@@ -41,6 +41,9 @@ static volatile uint64_t delta_time_freq_grid = 0;
 /** @brief Var to sign sensor pulse ready to calculate time difference */
 static volatile bool sensor_pulse_ready = false;
 
+/** @brief Var to enable sensor-grid pulse diff time */
+static volatile bool enable_diff_time_feature = false;
+
 /** @brief Queue to send diff time from ISR to time difference function */
 QueueHandle_t queue_time_difference = NULL;
 
@@ -48,6 +51,10 @@ QueueHandle_t queue_time_difference = NULL;
  * Function Prototypes
 **********************************************************/
 esp_err_t gpio_init(void);
+esp_err_t time_difference_function(QueueHandle_t queue_time_difference_main);
+void gpio_enable_interrupts(void);
+void gpio_disable_interrupts(void);
+void set_diff_time_feature(bool enable);
 
 /*********************************************************
  * Callbacks
@@ -66,11 +73,14 @@ static void IRAM_ATTR grid_itr_callback(void *arg)
         if (delta_time_freq_grid > GRID_WINDOW_FILTER) 
         {
             T_firstpulse_grid = time_now;
-        
-            if(sensor_pulse_ready) 
+            
+            /* Diff time ISR feature */
+            if((sensor_pulse_ready) && (enable_diff_time_feature))
             {
                 uint16_t time_diff = (uint16_t)(T_firstpulse_grid - sensor_pulse_moment_reference);
                 xQueueSendFromISR(queue_time_difference, &time_diff, NULL);
+
+                /* Enable sensor ISR for a new diff time cycle */
                 sensor_pulse_ready = false;
             } 
         }
@@ -93,7 +103,8 @@ static void IRAM_ATTR sensor_itr_callback(void *arg)
             /* Update period time reference */
             T_firstpulse_sensor = time_now;
 
-            if (!sensor_pulse_ready)
+            /* Diff time ISR feature */
+            if ((!sensor_pulse_ready) && (enable_diff_time_feature))
             {
                 /* Take time reference to calculate grid-sensor diff time */
                 sensor_pulse_moment_reference = T_firstpulse_sensor;
@@ -190,4 +201,9 @@ void gpio_disable_interrupts(void)
     /* Disable interrupts for grid and sensor */
     gpio_intr_disable(ELETRIC_GRID_PIN);
     gpio_intr_disable(SENSOR_PIN);
+}
+
+void set_diff_time_feature(bool enable)
+{
+    enable_diff_time_feature = enable;
 }
