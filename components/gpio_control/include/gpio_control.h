@@ -20,4 +20,10 @@ void gpio_disable_interrupts(void);
 
 void set_diff_time_feature(bool enable);
 
+void set_freq_monitoring_feature(bool enable);
+
+esp_err_t take_grid_period(QueueHandle_t queue_grid_period_main);
+
+esp_err_t take_sensor_period(QueueHandle_t queue_sensor_period_main);
+
 #endif // GPIO_CONTROL_H
