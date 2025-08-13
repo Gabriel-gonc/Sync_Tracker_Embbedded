@@ -35,8 +35,8 @@ static volatile uint64_t sensor_pulse_moment_reference = 0;
 
 /** @brief Variable to store the pulse period 
  *          for both sensor and grid */
-static volatile uint16_t delta_time_freq_sensor = 0;
-static volatile uint16_t delta_time_freq_grid = 0;
+static uint16_t delta_time_freq_sensor = 0;
+static uint16_t delta_time_freq_grid = 0;
 
 /** @brief Var to sign sensor pulse ready to calculate time difference */
 static volatile bool sensor_pulse_ready = false;
