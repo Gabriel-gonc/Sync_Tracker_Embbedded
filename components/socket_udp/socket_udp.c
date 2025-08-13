@@ -27,9 +27,6 @@
 
 #define PORT CONFIG_EXAMPLE_PORT
 
-static const char *UDP_TAG = "example";
-
- 
 /*********************************************************
  * Variables
  *********************************************************/
@@ -72,13 +69,11 @@ esp_err_t udp_socket_send(char *data, int len)
     socklen_t socklen = sizeof(dest_addr);
 
     if (sock < 0) {
-        // ESP_LOGE(UDP_TAG, "Socket not created");
         return ESP_FAIL;
     }
 
     int err = sendto(sock, data, len, 0, (struct sockaddr *)&dest_addr, socklen);
     if (err < 0) {
-        // ESP_LOGE(UDP_TAG, "Error occurred during sending: errno %d", errno);
         return ESP_FAIL;
     }
     return ESP_OK;
@@ -92,7 +87,6 @@ int udp_socket_receive(char *buffer, int buffer_len)
     int len = recvfrom(sock, buffer, buffer_len - 1, 0,
                        (struct sockaddr *)&source_addr, &socklen);
     if (len < 0) {
-        // ESP_LOGE(UDP_TAG, "recvfrom failed: errno %d", errno);
         return -1;
     }
 
