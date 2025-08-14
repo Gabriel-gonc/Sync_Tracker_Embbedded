@@ -28,6 +28,9 @@
 #define MSG_MON "MONITORING"
 #define MSG_FNSH_MON "FINISH_MONITORING"
 #define MSG_OP "OPERATIONAL"
+#define MSG_FREQ "FREQUENCY"
+#define MSG_FNSH_OP "FINISH_OPERATIONAL"
+#define MSG_FNSH_FREQ "FINISH_FREQUENCY"
 
 /***********************************************************
  * Project Types
@@ -48,6 +51,7 @@ typedef enum {
     STATE_CONNECTED,
     STATE_MONITORING,
     STATE_OPERATIONAL,
+    STATE_FREQUENCY,
     STATE_ERROR,
 } system_state_t;
 

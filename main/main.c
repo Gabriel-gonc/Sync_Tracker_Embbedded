@@ -22,7 +22,7 @@
  * Defines
 ***********************************************************/
 #define MAIN_TAG "MAIN"
-#define QUEUE_TIME_DIFF_MAIN_LENGHT 10
+#define QUEUE_MAIN_LENGHT 10
 
 /***********************************************************
  * Function Prototypes
@@ -30,14 +30,23 @@
 static void system_callback(system_event_t event);
 static system_state_t trait_messages(bool hand_shaking, bool state_comp, bool check_msg);
 static void time_difference_mock();
-static void check_state_exit(char* msg_exit_criteria);
+static bool check_state_exit(char* msg_exit_criteria);
 static void process_sensor_to_grid_diff_time (void);
+void grid_freq_task(void *pvParameters);
+void sensor_freq_task(void *pvParameters);
+static void state_transition(void);
 
 /***********************************************************
  * Variables
 ***********************************************************/
 /** @brief Array to store the time difference between sensor and grid pulses */
 static uint16_t time_difference[NUM_CYCLES_DIFF_PULSE] = {0};
+
+/** @brief Array to store grid pulse periods. */
+static uint16_t time_array_freq_grid[GRID_FREQUENCY] = {0};
+
+/** @brief Array to store sensor pulse periods. */
+static uint16_t time_array_freq_sensor[SENSOR_FREQUENCY] = {0};
 
 /** @brief Event Group variables. */
 EventGroupHandle_t main_event_group = NULL;
@@ -53,6 +62,21 @@ static volatile system_state_t current_state = STATE_IDLE;
 /** @brief Queue to take diff buffer already filled */
 QueueHandle_t queue_time_difference_main = NULL;
 
+/** @brief Queue to take grid pulse period */
+QueueHandle_t queue_grid_period_main = NULL;
+
+/** @brief Queue to take sensor pulse period */
+QueueHandle_t queue_sensor_period_main = NULL;
+
+/** @brief Semaphore for UDP socket */
+SemaphoreHandle_t udp_semaphore = NULL;
+
+/** @brief Task handle to freq_grid task */
+TaskHandle_t task_handle_freq_grid = NULL;
+
+/** @brief Task handle to freq_sensor task */
+TaskHandle_t task_handle_freq_sensor = NULL;
+
 /***********************************************************
  * Main Function
 ***********************************************************/
@@ -61,20 +85,44 @@ void app_main(void)
     /* Create event group */
     main_event_group = xEventGroupCreate();
 
-    /* Create queue */
-    queue_time_difference_main = xQueueCreate(QUEUE_TIME_DIFF_MAIN_LENGHT, sizeof(time_difference));
+    /* Create time diff queue */
+    queue_time_difference_main = xQueueCreate(QUEUE_MAIN_LENGHT, sizeof(time_difference));
     if (queue_time_difference_main == NULL) 
     {
         ESP_LOGE(MAIN_TAG, "Failed to create queue");
         esp_restart();
     }
 
-    /* GPIO Init */  //DISCOMMENT!
-    // if (gpio_init() != ESP_OK)
-    // {
-    //     ESP_LOGE(MAIN_TAG, "Failed to initialize GPIO");
-    //     esp_restart();
-    // }
+    /* Create grid period queue */
+    queue_grid_period_main = xQueueCreate(QUEUE_MAIN_LENGHT, sizeof(time_array_freq_grid));
+    if (queue_grid_period_main == NULL) 
+    {
+        ESP_LOGE(MAIN_TAG, "Failed to create grid period queue");
+        esp_restart();
+    }
+
+    /* Create sensor period queue */
+    queue_sensor_period_main = xQueueCreate(QUEUE_MAIN_LENGHT, sizeof(time_array_freq_sensor));
+    if (queue_sensor_period_main == NULL) 
+    {
+        ESP_LOGE(MAIN_TAG, "Failed to create sensor period queue");
+        esp_restart();
+    }
+
+    /* Create udp semaphore */
+    udp_semaphore = xSemaphoreCreateMutex();
+    if (udp_semaphore == NULL) 
+    {
+        ESP_LOGE(MAIN_TAG, "Failed to create UDP semaphore");
+        esp_restart();
+    }
+
+    /* GPIO Init */ 
+    if (gpio_init() != ESP_OK)
+    {
+        ESP_LOGE(MAIN_TAG, "Failed to initialize GPIO");
+        esp_restart();
+    }
 
     /* Init wifi*/
     wifi_init_softap();
@@ -95,13 +143,11 @@ void app_main(void)
     /* Receiving next state command */
     ESP_LOGI(MAIN_TAG, "Waiting next CMD");
     current_state = trait_messages(false, true, false);
-    // if (current_state == STATE_MONITORING)
-        // set_diff_time_feature(true); // Enable feature
 
-    /* Enable gpio interrupts */
-    gpio_enable_interrupts();
-    gpio_disable_interrupts();
+    /* Settings for the next state */
+    state_transition();
 
+    /* Main Loop */
     while (1)
     {
         switch (current_state)
@@ -112,29 +158,63 @@ void app_main(void)
                 time_difference_mock();
 
                 /* Check state exit criteria */
-                check_state_exit(MSG_FNSH_MON);
+                if (check_state_exit(MSG_FNSH_MON))
+                {
+                    /* Dable feature and interrupts */
+                    set_diff_time_feature(false); 
+                    gpio_disable_interrupts();
+                    
+                    /* Settings for the next state */
+                    state_transition();
+                }
                 break;
 
                 // /* Take and send sensor to grid pulse diff time */
                 // process_sensor_to_grid_diff_time(); //DISCOMMENT!
-
-                // /* Check state exit criteria */
-                // check_state_exit(MSG_FNSH_MON);
-                // if (current_state != STATE_MONITORING)
-                //  set_diff_time_feature(false); // Disable feature
+                /* Check state exit criteria */
+                // if (check_state_exit(MSG_FNSH_MON))
+                // {
+                //     /* Dable feature and interrupts */
+                //     set_diff_time_feature(false); 
+                //     gpio_disable_interrupts();
+                    
+                //     /* Settings for the next state */
+                //     state_transition();
+                // }
                 // break;
+            }
+            case STATE_FREQUENCY:
+            {
+                /* Check state exit criteria */
+                check_state_exit(MSG_FNSH_FREQ); 
+                vTaskDelay(1000 / portTICK_PERIOD_MS); //Avoid watchdog time
 
+                /* Check state exit criteria */
+                if (check_state_exit(MSG_FNSH_FREQ))
+                {
+                    /* Dable feature and interrupts */
+                    set_freq_monitoring_feature(false); 
+                    gpio_disable_interrupts();
+
+                    /* Task delete */
+                    if (task_handle_freq_grid != NULL)
+                    {
+                        vTaskDelete(task_handle_freq_grid);
+                    }
+                    if (task_handle_freq_sensor != NULL)
+                    {
+                        vTaskDelete(task_handle_freq_sensor);
+                    }
+                    
+                    /* Settings for the next state */
+                    state_transition();
+                }
+                break;
             }
 
             default:
                 break;
         }
-    }
-
-    /* Main loop. */
-    while(true)
-    {
-        vTaskDelay(20000 / portTICK_PERIOD_MS);
     }
 }
 
@@ -144,7 +224,8 @@ void app_main(void)
 /** @brief Function to enable inter-components communication */
 static void system_callback(system_event_t event)
 {
-    switch (event) {
+    switch (event) 
+    {
         case SYSTEM_WIFI_CONNECTED:
             xEventGroupSetBits(main_event_group, WIFI_CONNECTED_BIT);
             break;
@@ -176,14 +257,22 @@ static system_state_t trait_messages(bool hand_shaking, bool state_comp, bool ch
                 if (strncmp(udp_receive_buffer, MSG_SYNC, strlen(MSG_SYNC)) == 0)
                 {
                     int len = snprintf(udp_send_buffer, sizeof(udp_send_buffer), "%s", CMD_ACK);
-                    udp_socket_send(udp_send_buffer, len);
+                    if (xSemaphoreTake(udp_semaphore, portMAX_DELAY) == pdTRUE) 
+                    {
+                        udp_socket_send(udp_send_buffer, len);
+                    }
+                    xSemaphoreGive(udp_semaphore);
                     ESP_LOGI(MAIN_TAG, "Connected!");
                     return STATE_CONNECTED;  
                 }
                 else 
                 {
                     int len = snprintf(udp_send_buffer, sizeof(udp_send_buffer), "%s", CMD_NACK);
-                    udp_socket_send(udp_send_buffer, len);
+                    if (xSemaphoreTake(udp_semaphore, portMAX_DELAY) == pdTRUE) 
+                    {
+                        udp_socket_send(udp_send_buffer, len);
+                    }
+                    xSemaphoreGive(udp_semaphore);
                 }
             }
 
@@ -193,21 +282,44 @@ static system_state_t trait_messages(bool hand_shaking, bool state_comp, bool ch
                 {
                     ESP_LOGI(MAIN_TAG, "Received monitoring command");
                     int len = snprintf(udp_send_buffer, sizeof(udp_send_buffer), "%s", CMD_ACK);
-                    udp_socket_send(udp_send_buffer, len);
+                    if (xSemaphoreTake(udp_semaphore, portMAX_DELAY) == pdTRUE) 
+                    {
+                        udp_socket_send(udp_send_buffer, len);
+                    }
+                    xSemaphoreGive(udp_semaphore);
                     return STATE_MONITORING;
                 }
                 else if (strncmp(udp_receive_buffer, MSG_OP, strlen(MSG_OP)) == 0)
                 {
                     ESP_LOGI(MAIN_TAG, "Received operational command");
                     int len = snprintf(udp_send_buffer, sizeof(udp_send_buffer), "%s", CMD_ACK);
-                    udp_socket_send(udp_send_buffer, len);
+                    if (xSemaphoreTake(udp_semaphore, portMAX_DELAY) == pdTRUE) 
+                    {
+                        udp_socket_send(udp_send_buffer, len);
+                    }
+                    xSemaphoreGive(udp_semaphore);
                     return STATE_OPERATIONAL;
+                }
+                else if (strncmp(udp_receive_buffer, MSG_FREQ, strlen(MSG_FREQ)) == 0)
+                {
+                    ESP_LOGI(MAIN_TAG, "Received frequency command");
+                    int len = snprintf(udp_send_buffer, sizeof(udp_send_buffer), "%s", CMD_ACK);
+                    if (xSemaphoreTake(udp_semaphore, portMAX_DELAY) == pdTRUE) 
+                    {
+                        udp_socket_send(udp_send_buffer, len);
+                    }
+                    xSemaphoreGive(udp_semaphore);
+                    return STATE_FREQUENCY; 
                 }
                 else 
                 {
                     ESP_LOGW(MAIN_TAG, "Invalid command received: %s", udp_receive_buffer);
                     int len = snprintf(udp_send_buffer, sizeof(udp_send_buffer), "%s", CMD_NACK);
-                    udp_socket_send(udp_send_buffer, len);
+                    if (xSemaphoreTake(udp_semaphore, portMAX_DELAY) == pdTRUE) 
+                    {
+                        udp_socket_send(udp_send_buffer, len);
+                    }
+                    xSemaphoreGive(udp_semaphore);
                 }
             }
 
@@ -231,7 +343,7 @@ static system_state_t trait_messages(bool hand_shaking, bool state_comp, bool ch
  *  @param msg_exit_criteria Exit criteria received from vision
  * 
  */
-static void check_state_exit(char* msg_exit_criteria)
+static bool check_state_exit(char* msg_exit_criteria)
 {
     /* Check if the exit criteria has been received */
     system_state_t msg_received = trait_messages(false, false, true);
@@ -245,33 +357,67 @@ static void check_state_exit(char* msg_exit_criteria)
 
             /* Send ACK CMD */
             int len = snprintf(udp_send_buffer, sizeof(udp_send_buffer), "%s", CMD_ACK);
-            udp_socket_send(udp_send_buffer, len);
+            if (xSemaphoreTake(udp_semaphore, portMAX_DELAY) == pdTRUE) 
+            {
+                udp_socket_send(udp_send_buffer, len);
+            }
+            xSemaphoreGive(udp_semaphore);
 
             /* Receiving next state command */
             ESP_LOGI(MAIN_TAG, "Waiting next state CMD");
             current_state = trait_messages(false, true, false);
-
-            /* Enable gpio interrupts */
-            // if (current_state != STATE_IDLE)
-            gpio_enable_interrupts();
-            return;
+            return true;
         }
         else 
         {
             int len = snprintf(udp_send_buffer, sizeof(udp_send_buffer), "%s", CMD_NACK);
-            udp_socket_send(udp_send_buffer, len);
+            if (xSemaphoreTake(udp_semaphore, portMAX_DELAY) == pdTRUE) 
+            {
+                udp_socket_send(udp_send_buffer, len);
+            }
+            xSemaphoreGive(udp_semaphore);
             ESP_LOGE(MAIN_TAG, "Waiting Exit Criteria: %s", msg_exit_criteria);
-            return;
+            return false;
         }
     }
-    return;
+    return false;
+}
+
+static void state_transition(void)
+{
+    switch (current_state)
+    {
+        case STATE_MONITORING:
+        {
+            /* Enable diff time monitoring feature and interrupts */
+            set_diff_time_feature(true); 
+            gpio_enable_interrupts();
+            break;
+        }
+        case STATE_FREQUENCY:
+        {
+            /* Enable frequency monitoring feature and interrupts */
+            set_freq_monitoring_feature(true); 
+            gpio_enable_interrupts();
+
+            /* Task Create */
+            xTaskCreate(grid_freq_task, "grid_freq_task", 4096, NULL, 1, &task_handle_freq_grid);
+            xTaskCreate(sensor_freq_task, "sensor_freq_task", 4096, NULL, 1, &task_handle_freq_sensor);
+            break;
+        }
+        
+        default:
+        {
+            break;
+        }
+    }
 }
 
 static void process_sensor_to_grid_diff_time (void)
 {
     esp_err_t err = time_difference_function(queue_time_difference_main);
     
-    if (err != ESP_OK)
+    if (err == ESP_OK)
     {
         /* Copy time_difference buffer to transmission while sampling continues */
         xQueueReceive(queue_time_difference_main, &time_difference, portMAX_DELAY);
@@ -286,16 +432,20 @@ static void process_sensor_to_grid_diff_time (void)
     
         /* Send data to vision without null-terminator */
         pos = pos - 1;
-        udp_socket_send(udp_send_buffer, pos);
+        if (xSemaphoreTake(udp_semaphore, portMAX_DELAY) == pdTRUE) 
+        {
+            udp_socket_send(udp_send_buffer, pos);
+            xSemaphoreGive(udp_semaphore);
+        }
     }
 }
 
 /** @brief Funtion to mock measure of the pulse difference time */
 static void time_difference_mock()
 {
-    uint64_t delay_time = (uint64_t)((NUM_CYCLES_DIFF_PULSE / SENSOR_FREQUENCY) * 1000);
+    uint16_t delay_time = (uint16_t)((NUM_CYCLES_DIFF_PULSE / SENSOR_FREQUENCY) * 1000);
 
-    for (uint64_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
+    for (uint16_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
     {
         time_difference[i] = 10000 + 100 * i; 
     }
@@ -303,8 +453,8 @@ static void time_difference_mock()
     /* Simulate grid sampling delay */
     vTaskDelay(delay_time / portTICK_PERIOD_MS);
 
-    uint64_t pos = 0;
-    for (uint64_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
+    uint16_t pos = 0;
+    for (uint16_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
     {
         int len = snprintf((udp_send_buffer + pos), (sizeof(udp_send_buffer) - pos), "%u,", time_difference[i]);
         pos += len;
@@ -312,14 +462,81 @@ static void time_difference_mock()
 
     /* Avoid send the null terminator. */
     pos = pos - 1;
-    udp_socket_send(udp_send_buffer, pos);
+    if (xSemaphoreTake(udp_semaphore, portMAX_DELAY) == pdTRUE) 
+    {
+        udp_socket_send(udp_send_buffer, pos);
+        xSemaphoreGive(udp_semaphore);
+    }
 }
 
 /***********************************************************
  * FreeRTOS Tasks
 ***********************************************************/
 
+void grid_freq_task(void *pvParameters)
+{
+    while(true)
+    {
+        esp_err_t err = take_grid_period(queue_grid_period_main);
 
-/***********************************************************
- * Callbacks for GPIO Interrupts
-***********************************************************/
+        if (err == ESP_OK)
+        {
+            /* Take the grid pulse period buffer */
+            xQueueReceive(queue_grid_period_main, &time_array_freq_grid, portMAX_DELAY);
+
+            /* Format the data to transmit */
+            uint16_t pos = 0;
+            for (uint16_t i = 0; i < GRID_FREQUENCY; i++)
+            {
+                int len = snprintf((udp_send_buffer + pos), (sizeof(udp_send_buffer) - pos), "%u,", time_array_freq_grid[i]);
+                pos += len;
+            }
+        
+            /* Send data to vision without null-terminator */
+            pos = pos - 1;
+            if (xSemaphoreTake(udp_semaphore, portMAX_DELAY) == pdTRUE) 
+            {
+                udp_socket_send(udp_send_buffer, pos);
+                xSemaphoreGive(udp_semaphore);
+            }
+        }
+        else
+        {
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+        }
+    }
+}
+
+void sensor_freq_task(void *pvParameters)
+{
+    while(true)
+    {
+        esp_err_t err = take_sensor_period(queue_sensor_period_main);
+
+        if (err == ESP_OK)
+        {
+            /* Take the sensor pulse period buffer */
+            xQueueReceive(queue_sensor_period_main, &time_array_freq_sensor, portMAX_DELAY);
+
+            /* Format the data to transmit */
+            uint16_t pos = 0;
+            for (uint16_t i = 0; i < SENSOR_FREQUENCY; i++)
+            {
+                int len = snprintf((udp_send_buffer + pos), (sizeof(udp_send_buffer) - pos), "%u,", time_array_freq_sensor[i]);
+                pos += len;
+            }
+        
+            /* Send data to vision without null-terminator */
+            pos = pos - 1;
+            if (xSemaphoreTake(udp_semaphore, portMAX_DELAY) == pdTRUE) 
+            {
+                udp_socket_send(udp_send_buffer, pos);
+                xSemaphoreGive(udp_semaphore);
+            }
+        }
+        else
+        {
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+        }
+    }
+}
