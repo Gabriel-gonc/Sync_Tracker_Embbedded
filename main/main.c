@@ -29,7 +29,6 @@
 ***********************************************************/
 static void system_callback(system_event_t event);
 static system_state_t trait_messages(bool hand_shaking, bool state_comp, bool check_msg);
-static void time_difference_mock();
 static bool check_state_exit(char* msg_exit_criteria);
 static void process_sensor_to_grid_diff_time (void);
 void grid_freq_task(void *pvParameters);
@@ -154,13 +153,13 @@ void app_main(void)
         {
             case STATE_MONITORING:
             {
-                /* Simulate time difference data */
-                time_difference_mock();
+                /* Take and send sensor to grid pulse diff time */
+                process_sensor_to_grid_diff_time(); 
 
                 /* Check state exit criteria */
                 if (check_state_exit(MSG_FNSH_MON))
                 {
-                    /* Dable feature and interrupts */
+                    /* Disable feature and interrupts */
                     set_diff_time_feature(false); 
                     gpio_disable_interrupts();
                     
@@ -168,20 +167,6 @@ void app_main(void)
                     state_transition();
                 }
                 break;
-
-                // /* Take and send sensor to grid pulse diff time */
-                // process_sensor_to_grid_diff_time(); //DISCOMMENT!
-                /* Check state exit criteria */
-                // if (check_state_exit(MSG_FNSH_MON))
-                // {
-                //     /* Dable feature and interrupts */
-                //     set_diff_time_feature(false); 
-                //     gpio_disable_interrupts();
-                    
-                //     /* Settings for the next state */
-                //     state_transition();
-                // }
-                // break;
             }
             case STATE_FREQUENCY:
             {
@@ -437,35 +422,6 @@ static void process_sensor_to_grid_diff_time (void)
             udp_socket_send(udp_send_buffer, pos);
             xSemaphoreGive(udp_semaphore);
         }
-    }
-}
-
-/** @brief Funtion to mock measure of the pulse difference time */
-static void time_difference_mock()
-{
-    uint16_t delay_time = (uint16_t)((NUM_CYCLES_DIFF_PULSE / SENSOR_FREQUENCY) * 1000);
-
-    for (uint16_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
-    {
-        time_difference[i] = 10000 + 100 * i; 
-    }
-
-    /* Simulate grid sampling delay */
-    vTaskDelay(delay_time / portTICK_PERIOD_MS);
-
-    uint16_t pos = 0;
-    for (uint16_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
-    {
-        int len = snprintf((udp_send_buffer + pos), (sizeof(udp_send_buffer) - pos), "%u,", time_difference[i]);
-        pos += len;
-    }
-
-    /* Avoid send the null terminator. */
-    pos = pos - 1;
-    if (xSemaphoreTake(udp_semaphore, portMAX_DELAY) == pdTRUE) 
-    {
-        udp_socket_send(udp_send_buffer, pos);
-        xSemaphoreGive(udp_semaphore);
     }
 }
 

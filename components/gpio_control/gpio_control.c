@@ -44,6 +44,8 @@ static volatile bool sensor_pulse_ready = false;
 /** @brief Var to enable sensor-grid pulse diff time */
 static volatile bool enable_diff_time_feature = false;
 
+static volatile bool interrupt_enabled = false; // ERASE, JUST FOR TESTS *************************************************************
+
 /** @brief Var to enable frequency monitoring  */
 static volatile bool enable_freq_monitoring = false;
 
@@ -214,12 +216,19 @@ esp_err_t time_difference_function(QueueHandle_t queue_time_difference_main)
     uint16_t time_diff[NUM_CYCLES_DIFF_PULSE] = {0};
     for (uint16_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
     {
-        if (xQueueReceive(queue_time_difference, &time_diff[i], portMAX_DELAY) != pdTRUE)
+        // if (xQueueReceive(queue_time_difference, &time_diff[i], portMAX_DELAY) != pdTRUE)
+        // { DISCOMENT
+        //     i -= 1; 
+        //     ESP_LOGE(GPIO_CONTROL_TAG, "Failed to receive time difference from ISR");
+        // }
+
+        if (enable_diff_time_feature && interrupt_enabled)
         {
-            i -= 1; 
-            ESP_LOGE(GPIO_CONTROL_TAG, "Failed to receive time difference from ISR");
+            time_diff[i] = 10000 - 2 * (i * i);
         }
     }
+    // Just for tests, ERASE
+    vTaskDelay((SAMPLE_DURATION_SEC * 1000) / portTICK_PERIOD_MS);
 
     /* Send diff buffer to main application */
     if (queue_time_difference_main != NULL)
@@ -237,10 +246,15 @@ esp_err_t take_grid_period(QueueHandle_t queue_grid_period_main)
     uint16_t grid_period[GRID_FREQUENCY] = {0};
     for (uint16_t i = 0; i < GRID_FREQUENCY; i++)
     {
-        if (xQueueReceive(queue_grid_period, &grid_period[i], portMAX_DELAY) != pdTRUE)
+        // if (xQueueReceive(queue_grid_period, &grid_period[i], portMAX_DELAY) != pdTRUE)
+        // {
+        //     i -= 1; 
+        //     ESP_LOGE(GPIO_CONTROL_TAG, "Failed to receive grid period from ISR");
+        // }
+
+        if (enable_freq_monitoring && interrupt_enabled)
         {
-            i -= 1; 
-            ESP_LOGE(GPIO_CONTROL_TAG, "Failed to receive grid period from ISR");
+            grid_period[i] = 16667;
         }
     }
 
@@ -260,10 +274,15 @@ esp_err_t take_sensor_period(QueueHandle_t queue_sensor_period_main)
     uint16_t sensor_period[SENSOR_FREQUENCY] = {0};
     for (uint16_t i = 0; i < SENSOR_FREQUENCY; i++)
     {
-        if (xQueueReceive(queue_sensor_period, &sensor_period[i], portMAX_DELAY) != pdTRUE)
+        // if (xQueueReceive(queue_sensor_period, &sensor_period[i], portMAX_DELAY) != pdTRUE)
+        // {
+        //     i -= 1; 
+        //     ESP_LOGE(GPIO_CONTROL_TAG, "Failed to receive sensor period from ISR");
+        // }
+
+        if (enable_freq_monitoring && interrupt_enabled)
         {
-            i -= 1; 
-            ESP_LOGE(GPIO_CONTROL_TAG, "Failed to receive sensor period from ISR");
+            sensor_period[i] = 16667 * 2;
         }
     }
 
@@ -282,6 +301,7 @@ void gpio_enable_interrupts(void)
     /* Enable interrupts for grid and sensor */
     gpio_intr_enable(ELETRIC_GRID_PIN);
     gpio_intr_enable(SENSOR_PIN);
+    interrupt_enabled = true; // ERASE, JUST FOR TESTS *********************************
 }
 
 void gpio_disable_interrupts(void)
@@ -289,6 +309,7 @@ void gpio_disable_interrupts(void)
     /* Disable interrupts for grid and sensor */
     gpio_intr_disable(ELETRIC_GRID_PIN);
     gpio_intr_disable(SENSOR_PIN);
+    interrupt_enabled = false; // ERASE, JUST FOR TESTS *********************************
 }
 
 void set_diff_time_feature(bool enable)
