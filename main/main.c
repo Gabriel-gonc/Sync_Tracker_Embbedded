@@ -151,13 +151,13 @@ void app_main(void)
     {
         switch (current_state)
         {
-            case STATE_MONITORING:
+            case STATE_TIME_DIFF_MONITORING:
             {
                 /* Take and send sensor to grid pulse diff time */
                 process_sensor_to_grid_diff_time(); 
 
                 /* Check state exit criteria */
-                if (check_state_exit(MSG_FNSH_MON))
+                if (check_state_exit(MSG_FNSH_TIME_DIFF_MON))
                 {
                     /* Disable feature and interrupts */
                     set_diff_time_feature(false); 
@@ -168,7 +168,7 @@ void app_main(void)
                 }
                 break;
             }
-            case STATE_FREQUENCY:
+            case STATE_FREQUENCY_MONITORING:
             {
                 /* Check state exit criteria */
                 check_state_exit(MSG_FNSH_FREQ); 
@@ -263,16 +263,16 @@ static system_state_t trait_messages(bool hand_shaking, bool state_comp, bool ch
 
             else if (state_comp && !hand_shaking && !check_msg)
             {
-                if (strncmp(udp_receive_buffer, MSG_MON, strlen(MSG_MON)) == 0)
+                if (strncmp(udp_receive_buffer, MSG_TIME_DIFF_MON, strlen(MSG_TIME_DIFF_MON)) == 0)
                 {
-                    ESP_LOGI(MAIN_TAG, "Received monitoring command");
+                    ESP_LOGI(MAIN_TAG, "Received time diff monitoring command");
                     int len = snprintf(udp_send_buffer, sizeof(udp_send_buffer), "%s", CMD_ACK);
                     if (xSemaphoreTake(udp_semaphore, portMAX_DELAY) == pdTRUE) 
                     {
                         udp_socket_send(udp_send_buffer, len);
                     }
                     xSemaphoreGive(udp_semaphore);
-                    return STATE_MONITORING;
+                    return STATE_TIME_DIFF_MONITORING;
                 }
                 else if (strncmp(udp_receive_buffer, MSG_OP, strlen(MSG_OP)) == 0)
                 {
@@ -294,7 +294,7 @@ static system_state_t trait_messages(bool hand_shaking, bool state_comp, bool ch
                         udp_socket_send(udp_send_buffer, len);
                     }
                     xSemaphoreGive(udp_semaphore);
-                    return STATE_FREQUENCY; 
+                    return STATE_FREQUENCY_MONITORING; 
                 }
                 else 
                 {
@@ -372,14 +372,14 @@ static void state_transition(void)
 {
     switch (current_state)
     {
-        case STATE_MONITORING:
+        case STATE_TIME_DIFF_MONITORING:
         {
             /* Enable diff time monitoring feature and interrupts */
             set_diff_time_feature(true); 
             gpio_enable_interrupts();
             break;
         }
-        case STATE_FREQUENCY:
+        case STATE_FREQUENCY_MONITORING:
         {
             /* Enable frequency monitoring feature and interrupts */
             set_freq_monitoring_feature(true); 
