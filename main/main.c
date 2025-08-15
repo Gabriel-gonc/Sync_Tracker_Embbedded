@@ -42,10 +42,10 @@ static void state_transition(void);
 static uint16_t time_difference[NUM_CYCLES_DIFF_PULSE] = {0};
 
 /** @brief Array to store grid pulse periods. */
-static uint16_t time_array_freq_grid[GRID_FREQUENCY] = {0};
+static uint16_t time_array_freq_grid[GRID_FREQUENCY_BUFFER_SIZE] = {0};
 
 /** @brief Array to store sensor pulse periods. */
-static uint16_t time_array_freq_sensor[SENSOR_FREQUENCY] = {0};
+static uint16_t time_array_freq_sensor[SENSOR_FREQUENCY_BUFFER_SIZE] = {0};
 
 /** @brief Event Group variables. */
 EventGroupHandle_t main_event_group = NULL;
@@ -434,7 +434,7 @@ void grid_freq_task(void *pvParameters)
     while(true)
     {
         esp_err_t err = take_grid_period(queue_grid_period_main);
-
+        ESP_LOGI(MAIN_TAG,"GRID TASK"); //ERASE, JUST FOR TESTS
         if (err == ESP_OK)
         {
             /* Take the grid pulse period buffer */
@@ -442,7 +442,7 @@ void grid_freq_task(void *pvParameters)
 
             /* Format the data to transmit */
             uint16_t pos = 0;
-            for (uint16_t i = 0; i < GRID_FREQUENCY; i++)
+            for (uint16_t i = 0; i < GRID_FREQUENCY_BUFFER_SIZE; i++)
             {
                 int len = snprintf((udp_send_buffer + pos), (sizeof(udp_send_buffer) - pos), "%u,", time_array_freq_grid[i]);
                 pos += len;
@@ -468,7 +468,7 @@ void sensor_freq_task(void *pvParameters)
     while(true)
     {
         esp_err_t err = take_sensor_period(queue_sensor_period_main);
-
+        ESP_LOGI(MAIN_TAG,"SENSOR TASK"); //ERASE, JUST FOR TESTS
         if (err == ESP_OK)
         {
             /* Take the sensor pulse period buffer */
@@ -476,7 +476,7 @@ void sensor_freq_task(void *pvParameters)
 
             /* Format the data to transmit */
             uint16_t pos = 0;
-            for (uint16_t i = 0; i < SENSOR_FREQUENCY; i++)
+            for (uint16_t i = 0; i < SENSOR_FREQUENCY_BUFFER_SIZE; i++)
             {
                 int len = snprintf((udp_send_buffer + pos), (sizeof(udp_send_buffer) - pos), "%u,", time_array_freq_sensor[i]);
                 pos += len;

@@ -243,8 +243,9 @@ esp_err_t time_difference_function(QueueHandle_t queue_time_difference_main)
 esp_err_t take_grid_period(QueueHandle_t queue_grid_period_main)
 {  
     /* Fill grid period buffer with data from ISR */
-    uint16_t grid_period[GRID_FREQUENCY] = {0};
-    for (uint16_t i = 0; i < GRID_FREQUENCY; i++)
+    uint16_t grid_period[GRID_FREQUENCY_BUFFER_SIZE] = {0};
+    grid_period[0] = 1;
+    for (uint16_t i = 1; i < (GRID_FREQUENCY_BUFFER_SIZE); i++)
     {
         // if (xQueueReceive(queue_grid_period, &grid_period[i], portMAX_DELAY) != pdTRUE)
         // {
@@ -257,6 +258,9 @@ esp_err_t take_grid_period(QueueHandle_t queue_grid_period_main)
             grid_period[i] = 16667;
         }
     }
+
+    // Just for tests, ERASE
+    vTaskDelay((SAMPLE_DURATION_SEC * 1000) / portTICK_PERIOD_MS);
 
     /* Send grid period buffer to main application */
     if (queue_grid_period_main != NULL)
@@ -271,8 +275,9 @@ esp_err_t take_grid_period(QueueHandle_t queue_grid_period_main)
 esp_err_t take_sensor_period(QueueHandle_t queue_sensor_period_main)
 {  
     /* Fill sensor period buffer with data from ISR */
-    uint16_t sensor_period[SENSOR_FREQUENCY] = {0};
-    for (uint16_t i = 0; i < SENSOR_FREQUENCY; i++)
+    uint16_t sensor_period[SENSOR_FREQUENCY_BUFFER_SIZE] = {0};
+    sensor_period[0] = 2;
+    for (uint16_t i = 1; i < SENSOR_FREQUENCY_BUFFER_SIZE; i++)
     {
         // if (xQueueReceive(queue_sensor_period, &sensor_period[i], portMAX_DELAY) != pdTRUE)
         // {
@@ -285,6 +290,9 @@ esp_err_t take_sensor_period(QueueHandle_t queue_sensor_period_main)
             sensor_period[i] = 16667 * 2;
         }
     }
+
+    // Just for tests, ERASE
+    vTaskDelay((SAMPLE_DURATION_SEC * 1000) / portTICK_PERIOD_MS);
 
     /* Send sensor period buffer to main application */
     if (queue_sensor_period_main != NULL)
