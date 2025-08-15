@@ -255,7 +255,9 @@ esp_err_t take_grid_period(QueueHandle_t queue_grid_period_main)
 
         if (enable_freq_monitoring && interrupt_enabled)
         {
-            grid_period[i] = 16667;
+            srandom(esp_timer_get_time());  // inicializa semente
+            uint16_t r = (uint16_t)(random() % 100);    // número entre 0 e 99
+            grid_period[i] = 16667 + r;
         }
     }
 
@@ -287,7 +289,9 @@ esp_err_t take_sensor_period(QueueHandle_t queue_sensor_period_main)
 
         if (enable_freq_monitoring && interrupt_enabled)
         {
-            sensor_period[i] = 16667 * 2;
+            srandom(esp_timer_get_time());  // inicializa semente
+            uint16_t r = (uint16_t)(random() % 100);    // número entre 0 e 99
+            sensor_period[i] = (16667 * 2) + r;
         }
     }
 
