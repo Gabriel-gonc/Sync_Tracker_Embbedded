@@ -139,11 +139,7 @@ void app_main(void)
         esp_restart();
     }
 
-    /* Receiving next state command */
-    ESP_LOGI(MAIN_TAG, "Waiting next CMD");
-    current_state = trait_messages(false, true, false);
-
-    /* Settings for the next state */
+    /* Switch and settings for the next state */
     state_transition();
 
     /* Main Loop */
@@ -163,17 +159,13 @@ void app_main(void)
                     set_diff_time_feature(false); 
                     gpio_disable_interrupts();
                     
-                    /* Settings for the next state */
+                    /* Switch and settings for the next state */
                     state_transition();
                 }
                 break;
             }
             case STATE_FREQUENCY_MONITORING:
             {
-                /* Check state exit criteria */
-                check_state_exit(MSG_FNSH_FREQ); 
-                vTaskDelay(1000 / portTICK_PERIOD_MS); //Avoid watchdog time
-
                 /* Check state exit criteria */
                 if (check_state_exit(MSG_FNSH_FREQ))
                 {
@@ -183,17 +175,15 @@ void app_main(void)
 
                     /* Task delete */
                     if (task_handle_freq_grid != NULL)
-                    {
                         vTaskDelete(task_handle_freq_grid);
-                    }
                     if (task_handle_freq_sensor != NULL)
-                    {
                         vTaskDelete(task_handle_freq_sensor);
-                    }
                     
-                    /* Settings for the next state */
+                    /* Switch and settings for the next state */
                     state_transition();
                 }
+                /* Delay to avoid trig watchdog time */
+                vTaskDelay(1000 / portTICK_PERIOD_MS); //Avoid watchdog time
                 break;
             }
 
@@ -234,7 +224,13 @@ static system_state_t trait_messages(bool hand_shaking, bool state_comp, bool ch
 {
     while (1)
     {
-        int bytes_received = udp_socket_receive(udp_receive_buffer, sizeof(udp_receive_buffer));
+        int bytes_received = -1;
+        if (xSemaphoreTake(udp_semaphore, portMAX_DELAY) == pdTRUE) 
+        {
+            bytes_received = udp_socket_receive(udp_receive_buffer, sizeof(udp_receive_buffer));
+        }
+        xSemaphoreGive(udp_semaphore);
+        
         if (bytes_received > 0)
         {
             if (hand_shaking && !state_comp && !check_msg)
@@ -337,9 +333,6 @@ static bool check_state_exit(char* msg_exit_criteria)
     {
         if (strncmp(udp_receive_buffer, msg_exit_criteria, strlen(msg_exit_criteria)) == 0)
         {
-            /* Disable interrupts */
-            gpio_disable_interrupts();
-
             /* Send ACK CMD */
             int len = snprintf(udp_send_buffer, sizeof(udp_send_buffer), "%s", CMD_ACK);
             if (xSemaphoreTake(udp_semaphore, portMAX_DELAY) == pdTRUE) 
@@ -348,9 +341,6 @@ static bool check_state_exit(char* msg_exit_criteria)
             }
             xSemaphoreGive(udp_semaphore);
 
-            /* Receiving next state command */
-            ESP_LOGI(MAIN_TAG, "Waiting next state CMD");
-            current_state = trait_messages(false, true, false);
             return true;
         }
         else 
@@ -370,6 +360,10 @@ static bool check_state_exit(char* msg_exit_criteria)
 
 static void state_transition(void)
 {
+    /* Receiving next state command */
+    ESP_LOGI(MAIN_TAG, "Waiting next state CMD");
+    current_state = trait_messages(false, true, false);
+
     switch (current_state)
     {
         case STATE_TIME_DIFF_MONITORING:
@@ -440,18 +434,19 @@ void grid_freq_task(void *pvParameters)
             /* Take the grid pulse period buffer */
             xQueueReceive(queue_grid_period_main, &time_array_freq_grid, portMAX_DELAY);
 
-            /* Format the data to transmit */
-            uint16_t pos = 0;
-            for (uint16_t i = 0; i < GRID_FREQUENCY_BUFFER_SIZE; i++)
-            {
-                int len = snprintf((udp_send_buffer + pos), (sizeof(udp_send_buffer) - pos), "%u,", time_array_freq_grid[i]);
-                pos += len;
-            }
-        
-            /* Send data to vision without null-terminator */
-            pos = pos - 1;
             if (xSemaphoreTake(udp_semaphore, portMAX_DELAY) == pdTRUE) 
             {
+                /* Format the data to transmit */
+                uint16_t pos = 0;
+                for (uint16_t i = 0; i < GRID_FREQUENCY_BUFFER_SIZE; i++)
+                {
+                    int len = snprintf((udp_send_buffer + pos), (sizeof(udp_send_buffer) - pos), "%u,", time_array_freq_grid[i]);
+                    pos += len;
+                }
+            
+                /* Send data to vision without null-terminator */
+                pos = pos - 1;
+
                 udp_socket_send(udp_send_buffer, pos);
                 xSemaphoreGive(udp_semaphore);
             }
@@ -474,18 +469,19 @@ void sensor_freq_task(void *pvParameters)
             /* Take the sensor pulse period buffer */
             xQueueReceive(queue_sensor_period_main, &time_array_freq_sensor, portMAX_DELAY);
 
-            /* Format the data to transmit */
-            uint16_t pos = 0;
-            for (uint16_t i = 0; i < SENSOR_FREQUENCY_BUFFER_SIZE; i++)
-            {
-                int len = snprintf((udp_send_buffer + pos), (sizeof(udp_send_buffer) - pos), "%u,", time_array_freq_sensor[i]);
-                pos += len;
-            }
-        
-            /* Send data to vision without null-terminator */
-            pos = pos - 1;
             if (xSemaphoreTake(udp_semaphore, portMAX_DELAY) == pdTRUE) 
             {
+                /* Format the data to transmit */
+                uint16_t pos = 0;
+                for (uint16_t i = 0; i < SENSOR_FREQUENCY_BUFFER_SIZE; i++)
+                {
+                    int len = snprintf((udp_send_buffer + pos), (sizeof(udp_send_buffer) - pos), "%u,", time_array_freq_sensor[i]);
+                    pos += len;
+                }
+            
+                /* Send data to vision without null-terminator */
+                pos = pos - 1;
+
                 udp_socket_send(udp_send_buffer, pos);
                 xSemaphoreGive(udp_semaphore);
             }
