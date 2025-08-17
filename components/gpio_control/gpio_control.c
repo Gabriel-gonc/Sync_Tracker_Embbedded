@@ -16,6 +16,7 @@
 #define GPIO_CONTROL_TAG "GPIO_CONTROL"
 #define ESP_INTR_FLAG_DEFAULT  ESP_INTR_FLAG_IRAM
 #define QUEUE_DATA_LENGHT 60 // Arbitrary length for the queue to hold ISR data
+#define QUEUE_TIMEOUT 100
 
 /*********************************************************
  * Variables
@@ -43,8 +44,6 @@ static volatile bool sensor_pulse_ready = false;
 
 /** @brief Var to enable sensor-grid pulse diff time */
 static volatile bool enable_diff_time_feature = false;
-
-static volatile bool interrupt_enabled = false; // ERASE, JUST FOR TESTS *************************************************************
 
 /** @brief Var to enable frequency monitoring  */
 static volatile bool enable_freq_monitoring = false;
@@ -216,19 +215,12 @@ esp_err_t time_difference_function(QueueHandle_t queue_time_difference_main)
     uint16_t time_diff[NUM_CYCLES_DIFF_PULSE] = {0};
     for (uint16_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
     {
-        // if (xQueueReceive(queue_time_difference, &time_diff[i], portMAX_DELAY) != pdTRUE)
-        // { DISCOMENT
-        //     i -= 1; 
-        //     ESP_LOGE(GPIO_CONTROL_TAG, "Failed to receive time difference from ISR");
-        // }
-
-        if (enable_diff_time_feature && interrupt_enabled)
-        {
-            time_diff[i] = 10000 - 2 * (i * i);
+        if (xQueueReceive(queue_time_difference, &time_diff[i], (QUEUE_TIMEOUT / portTICK_PERIOD_MS)) != pdTRUE)
+        { 
+            i -= 1; 
+            ESP_LOGE(GPIO_CONTROL_TAG, "Failed to receive time difference from ISR");
         }
     }
-    // Just for tests, ERASE
-    vTaskDelay((SAMPLE_DURATION_SEC * 1000) / portTICK_PERIOD_MS);
 
     /* Send diff buffer to main application */
     if (queue_time_difference_main != NULL)
@@ -247,22 +239,12 @@ esp_err_t take_grid_period(QueueHandle_t queue_grid_period_main)
     grid_period[0] = 1;
     for (uint16_t i = 1; i < (GRID_FREQUENCY_BUFFER_SIZE); i++)
     {
-        // if (xQueueReceive(queue_grid_period, &grid_period[i], portMAX_DELAY) != pdTRUE)
-        // {
-        //     i -= 1; 
-        //     ESP_LOGE(GPIO_CONTROL_TAG, "Failed to receive grid period from ISR");
-        // }
-
-        if (enable_freq_monitoring && interrupt_enabled)
+        if (xQueueReceive(queue_grid_period, &grid_period[i], (QUEUE_TIMEOUT / portTICK_PERIOD_MS)) != pdTRUE)
         {
-            srandom(esp_timer_get_time());  // inicializa semente
-            uint16_t r = (uint16_t)(random() % 100);    // número entre 0 e 99
-            grid_period[i] = 16667 + r;
+            i -= 1;
+            ESP_LOGE(GPIO_CONTROL_TAG, "Failed to receive grid period from ISR");
         }
     }
-
-    // Just for tests, ERASE
-    vTaskDelay((SAMPLE_DURATION_SEC * 1000) / portTICK_PERIOD_MS);
 
     /* Send grid period buffer to main application */
     if (queue_grid_period_main != NULL)
@@ -281,22 +263,12 @@ esp_err_t take_sensor_period(QueueHandle_t queue_sensor_period_main)
     sensor_period[0] = 2;
     for (uint16_t i = 1; i < SENSOR_FREQUENCY_BUFFER_SIZE; i++)
     {
-        // if (xQueueReceive(queue_sensor_period, &sensor_period[i], portMAX_DELAY) != pdTRUE)
-        // {
-        //     i -= 1; 
-        //     ESP_LOGE(GPIO_CONTROL_TAG, "Failed to receive sensor period from ISR");
-        // }
-
-        if (enable_freq_monitoring && interrupt_enabled)
+        if (xQueueReceive(queue_sensor_period, &sensor_period[i], (QUEUE_TIMEOUT / portTICK_PERIOD_MS)) != pdTRUE)
         {
-            srandom(esp_timer_get_time());  // inicializa semente
-            uint16_t r = (uint16_t)(random() % 100);    // número entre 0 e 99
-            sensor_period[i] = (16667 * 2) + r;
+            i -= 1; 
+            ESP_LOGE(GPIO_CONTROL_TAG, "Failed to receive sensor period from ISR");
         }
     }
-
-    // Just for tests, ERASE
-    vTaskDelay((SAMPLE_DURATION_SEC * 1000) / portTICK_PERIOD_MS);
 
     /* Send sensor period buffer to main application */
     if (queue_sensor_period_main != NULL)
@@ -313,7 +285,6 @@ void gpio_enable_interrupts(void)
     /* Enable interrupts for grid and sensor */
     gpio_intr_enable(ELETRIC_GRID_PIN);
     gpio_intr_enable(SENSOR_PIN);
-    interrupt_enabled = true; // ERASE, JUST FOR TESTS *********************************
 }
 
 void gpio_disable_interrupts(void)
@@ -321,7 +292,6 @@ void gpio_disable_interrupts(void)
     /* Disable interrupts for grid and sensor */
     gpio_intr_disable(ELETRIC_GRID_PIN);
     gpio_intr_disable(SENSOR_PIN);
-    interrupt_enabled = false; // ERASE, JUST FOR TESTS *********************************
 }
 
 void set_diff_time_feature(bool enable)

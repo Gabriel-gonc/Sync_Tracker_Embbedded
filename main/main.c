@@ -428,7 +428,7 @@ void grid_freq_task(void *pvParameters)
     while(true)
     {
         esp_err_t err = take_grid_period(queue_grid_period_main);
-        ESP_LOGI(MAIN_TAG,"GRID TASK"); //ERASE, JUST FOR TESTS
+        // ESP_LOGI(MAIN_TAG,"GRID TASK"); //ERASE, JUST FOR TESTS
         if (err == ESP_OK)
         {
             /* Take the grid pulse period buffer */
@@ -463,7 +463,7 @@ void sensor_freq_task(void *pvParameters)
     while(true)
     {
         esp_err_t err = take_sensor_period(queue_sensor_period_main);
-        ESP_LOGI(MAIN_TAG,"SENSOR TASK"); //ERASE, JUST FOR TESTS
+        // ESP_LOGI(MAIN_TAG,"SENSOR TASK"); //ERASE, JUST FOR TESTS
         if (err == ESP_OK)
         {
             /* Take the sensor pulse period buffer */

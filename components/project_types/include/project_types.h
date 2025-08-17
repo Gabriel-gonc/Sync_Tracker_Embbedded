@@ -5,8 +5,8 @@
  * Project Defines
 ***********************************************************/
 /** @brief Pinout */
-#define ELETRIC_GRID_PIN GPIO_NUM_5
-#define SENSOR_PIN GPIO_NUM_4
+#define ELETRIC_GRID_PIN GPIO_NUM_4
+#define SENSOR_PIN GPIO_NUM_5
 
 /** @brief Project Constants */
 #define POLES_PAIRS (2) // If the machine has 1 magnet for each pole pair this value must be 1
@@ -14,7 +14,7 @@
 #define SENSOR_FREQUENCY (GRID_FREQUENCY / POLES_PAIRS)
 #define SAMPLE_DURATION_SEC (1)
 #define NUM_CYCLES_DIFF_PULSE (SENSOR_FREQUENCY * SAMPLE_DURATION_SEC) 
-#define GRID_WINDOW_FILTER (15000) 
+#define GRID_WINDOW_FILTER (10000) 
 #define SENSOR_WINDOW_FILTER (GRID_WINDOW_FILTER * POLES_PAIRS)
 #define GRID_FREQUENCY_BUFFER_SIZE (GRID_FREQUENCY + 1)
 #define SENSOR_FREQUENCY_BUFFER_SIZE (SENSOR_FREQUENCY + 1)
