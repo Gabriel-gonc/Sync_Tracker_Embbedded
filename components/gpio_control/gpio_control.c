@@ -16,7 +16,8 @@
 #define GPIO_CONTROL_TAG "GPIO_CONTROL"
 #define ESP_INTR_FLAG_DEFAULT  ESP_INTR_FLAG_IRAM
 #define QUEUE_DATA_LENGHT 60 // Arbitrary length for the queue to hold ISR data
-#define QUEUE_TIMEOUT 100
+#define QUEUE_TIMEOUT 100 // Timeout in ms to wait for data from ISR
+#define MEAN_TIME_DIFF 6200
 
 /*********************************************************
  * Variables
@@ -98,6 +99,10 @@ static void IRAM_ATTR grid_itr_callback(void *arg)
             if((sensor_pulse_ready) && (enable_diff_time_feature))
             {
                 uint16_t time_diff = (uint16_t)(T_firstpulse_grid - sensor_pulse_moment_reference);
+                if (abs(time_diff - MEAN_TIME_DIFF) > 500)
+                {
+                    gpio_set_level(BREAKER_PIN, 1); // Open breaker
+                }
                 xQueueSendFromISR(queue_time_difference, &time_diff, NULL);
 
                 /* Enable sensor ISR for a new diff time cycle */
@@ -181,8 +186,16 @@ esp_err_t gpio_init(void)
     /* Install ISR Service*/
     gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
 
-    /* Config for Grid Signal */
+    /* Config for Breaker Signal */
     gpio_config_t io_conf;
+    io_conf.mode = GPIO_MODE_OUTPUT;
+    io_conf.pin_bit_mask = (1ULL<<BREAKER_PIN);
+    gpio_config(&io_conf);
+
+    /* Set Breaker to LOW (closed) */
+    gpio_set_level(BREAKER_PIN, 0); 
+
+    /* Config for Grid Signal */
     io_conf.intr_type = GPIO_INTR_NEGEDGE; 
     io_conf.mode = GPIO_MODE_INPUT;
     io_conf.pin_bit_mask = (1ULL<<ELETRIC_GRID_PIN);
@@ -217,7 +230,7 @@ esp_err_t time_difference_function(QueueHandle_t queue_time_difference_main)
     {
         if (xQueueReceive(queue_time_difference, &time_diff[i], (QUEUE_TIMEOUT / portTICK_PERIOD_MS)) != pdTRUE)
         { 
-            i -= 1; 
+            time_diff[i] = 65535;
             ESP_LOGE(GPIO_CONTROL_TAG, "Failed to receive time difference from ISR");
         }
     }
@@ -241,7 +254,7 @@ esp_err_t take_grid_period(QueueHandle_t queue_grid_period_main)
     {
         if (xQueueReceive(queue_grid_period, &grid_period[i], (QUEUE_TIMEOUT / portTICK_PERIOD_MS)) != pdTRUE)
         {
-            i -= 1;
+            grid_period[i] = 65535;
             ESP_LOGE(GPIO_CONTROL_TAG, "Failed to receive grid period from ISR");
         }
     }
@@ -265,7 +278,7 @@ esp_err_t take_sensor_period(QueueHandle_t queue_sensor_period_main)
     {
         if (xQueueReceive(queue_sensor_period, &sensor_period[i], (QUEUE_TIMEOUT / portTICK_PERIOD_MS)) != pdTRUE)
         {
-            i -= 1; 
+            sensor_period[i] = 65535;
             ESP_LOGE(GPIO_CONTROL_TAG, "Failed to receive sensor period from ISR");
         }
     }
@@ -299,6 +312,9 @@ void set_diff_time_feature(bool enable)
     enable_diff_time_feature = enable;
     if (enable)
     {
+        /* Clean the diff time queue */
+        xQueueReset(queue_time_difference);
+
         /* Reset the triggered process flags */
         triggered_process_freq_sensor = false;
         triggered_process_freq_grid = false;
@@ -314,6 +330,10 @@ void set_freq_monitoring_feature(bool enable)
     enable_freq_monitoring = enable;
     if (enable)
     {
+        /* Clean frequency monitoring queues */
+        xQueueReset(queue_grid_period);
+        xQueueReset(queue_sensor_period);
+
         /* Reset the triggered process flags */
         triggered_process_freq_sensor = false;
         triggered_process_freq_grid = false;

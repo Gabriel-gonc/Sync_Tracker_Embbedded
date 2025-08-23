@@ -368,6 +368,9 @@ static void state_transition(void)
     {
         case STATE_TIME_DIFF_MONITORING:
         {
+            /* Clean diff time main queue */
+            xQueueReset(queue_time_difference_main);
+
             /* Enable diff time monitoring feature and interrupts */
             set_diff_time_feature(true); 
             gpio_enable_interrupts();
@@ -375,6 +378,10 @@ static void state_transition(void)
         }
         case STATE_FREQUENCY_MONITORING:
         {
+            /* Clean frequency monitoring main queues */
+            xQueueReset(queue_grid_period_main);
+            xQueueReset(queue_sensor_period_main);
+
             /* Enable frequency monitoring feature and interrupts */
             set_freq_monitoring_feature(true); 
             gpio_enable_interrupts();
