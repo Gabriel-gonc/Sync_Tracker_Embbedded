@@ -17,7 +17,8 @@
 #define ESP_INTR_FLAG_DEFAULT  ESP_INTR_FLAG_IRAM
 #define QUEUE_DATA_LENGHT 60 // Arbitrary length for the queue to hold ISR data
 #define QUEUE_TIMEOUT 100 // Timeout in ms to wait for data from ISR
-#define MEAN_TIME_DIFF 6200
+#define DELTA_NULL_TIME 10400
+#define MAX_DELTA_TIME 2500 // 3595 the nominal value
 
 /*********************************************************
  * Variables
@@ -99,7 +100,7 @@ static void IRAM_ATTR grid_itr_callback(void *arg)
             if((sensor_pulse_ready) && (enable_diff_time_feature))
             {
                 uint16_t time_diff = (uint16_t)(T_firstpulse_grid - sensor_pulse_moment_reference);
-                if (abs(time_diff - MEAN_TIME_DIFF) > 500)
+                if (abs(time_diff - DELTA_NULL_TIME) >= MAX_DELTA_TIME)
                 {
                     gpio_set_level(BREAKER_PIN, 1); // Open breaker
                 }

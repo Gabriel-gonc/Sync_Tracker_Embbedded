@@ -4,7 +4,7 @@
     "idf.pythonInstallPath": "/usr/bin/python3",
     "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
     "C_Cpp.default.compilerPath": "/home/gabriel/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20241119/xtensa-esp-elf/bin/xtensa-esp32-elf-gcc",
-    "idf.port": "/dev/ttyUSB0",
+    "idf.port": "/dev/ttyACM0",
     "idf.flashType": "UART",
     "files.associations": {
         "project_types.h": "c",
@@ -14,7 +14,9 @@
         "task.h": "c",
         "semphr.h": "c",
         "cstdint": "c",
-        "format": "c"
+        "format": "c",
+        "esp_err.h": "c",
+        "gpio.h": "c"
     }
 }
     
