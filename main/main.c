@@ -28,7 +28,7 @@
  * Function Prototypes
 ***********************************************************/
 static void system_callback(system_event_t event);
-static system_state_t trait_messages(bool hand_shaking, bool state_comp, bool check_msg);
+static system_state_t trait_messages(bool hand_shaking, bool state_comp, bool check_msg, bool rcv_delta_null_time);
 static bool check_state_exit(char* msg_exit_criteria);
 static void process_sensor_to_grid_diff_time (void);
 void grid_freq_task(void *pvParameters);
@@ -132,7 +132,7 @@ void app_main(void)
     udp_socket_init();
 
     /* Establishing connection */
-    current_state = trait_messages(true, false, false);
+    current_state = trait_messages(true, false, false, false);
     if (current_state != STATE_CONNECTED)
     {
         ESP_LOGE(MAIN_TAG, "Failed to establish connection!");
@@ -220,7 +220,7 @@ static void system_callback(system_event_t event)
  * @param hand_shaking True for hand-shaking process, false otherwise
  * @param state_comp True for state setting process, false otherwise
  */
-static system_state_t trait_messages(bool hand_shaking, bool state_comp, bool check_msg)
+static system_state_t trait_messages(bool hand_shaking, bool state_comp, bool check_msg, bool rcv_delta_null_time)
 {
     while (1)
     {
@@ -233,7 +233,7 @@ static system_state_t trait_messages(bool hand_shaking, bool state_comp, bool ch
         
         if (bytes_received > 0)
         {
-            if (hand_shaking && !state_comp && !check_msg)
+            if (hand_shaking && !state_comp && !check_msg && !rcv_delta_null_time)
             {
                 if (strncmp(udp_receive_buffer, MSG_SYNC, strlen(MSG_SYNC)) == 0)
                 {
@@ -257,7 +257,7 @@ static system_state_t trait_messages(bool hand_shaking, bool state_comp, bool ch
                 }
             }
 
-            else if (state_comp && !hand_shaking && !check_msg)
+            else if (state_comp && !hand_shaking && !check_msg && !rcv_delta_null_time)
             {
                 if (strncmp(udp_receive_buffer, MSG_TIME_DIFF_MON, strlen(MSG_TIME_DIFF_MON)) == 0)
                 {
@@ -304,10 +304,15 @@ static system_state_t trait_messages(bool hand_shaking, bool state_comp, bool ch
                 }
             }
 
-            else if (check_msg && !hand_shaking && !state_comp)
+            else if (check_msg && !hand_shaking && !state_comp && !rcv_delta_null_time)
             {
                 return MSG_RECEIVED;
-            }   
+            }
+            
+            else if (rcv_delta_null_time && !check_msg && !hand_shaking && !state_comp)
+            {
+                ESP_LOGI(MAIN_TAG, "Received: %s", udp_receive_buffer);
+            }
         }
         
         else if (check_msg)
@@ -327,7 +332,7 @@ static system_state_t trait_messages(bool hand_shaking, bool state_comp, bool ch
 static bool check_state_exit(char* msg_exit_criteria)
 {
     /* Check if the exit criteria has been received */
-    system_state_t msg_received = trait_messages(false, false, true);
+    system_state_t msg_received = trait_messages(false, false, true, false);
     
     if (msg_received == MSG_RECEIVED)
     {
@@ -362,7 +367,7 @@ static void state_transition(void)
 {
     /* Receiving next state command */
     ESP_LOGI(MAIN_TAG, "Waiting next state CMD");
-    current_state = trait_messages(false, true, false);
+    current_state = trait_messages(false, true, false, false);
 
     switch (current_state)
     {
@@ -390,6 +395,11 @@ static void state_transition(void)
             xTaskCreate(grid_freq_task, "grid_freq_task", 4096, NULL, 1, &task_handle_freq_grid);
             xTaskCreate(sensor_freq_task, "sensor_freq_task", 4096, NULL, 1, &task_handle_freq_sensor);
             break;
+        }
+        case STATE_OPERATIONAL:
+        {
+            trait_messages(false, false, false, true);
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
         }
         
         default:
