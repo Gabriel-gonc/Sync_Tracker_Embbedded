@@ -311,9 +311,12 @@ static system_state_t trait_messages(bool hand_shaking, bool state_comp, bool ch
             
             else if (rcv_delta_null_time && !check_msg && !hand_shaking && !state_comp)
             {
+                /* Convert received value to uint16_t */
                 uint16_t value = (uint16_t) atoi((char *)udp_receive_buffer);
-                ESP_LOGI(MAIN_TAG, "Received delta null time value: %u", value);
-                ESP_LOGI(MAIN_TAG, "value + 10000: %u", (value + 10000));
+                ESP_LOGI(MAIN_TAG, "Gen Empty Diff Time: %u", value);
+
+                /* Set the gen_empty_diff_time */
+                set_gen_empty_time_diff(value);
             }
         }
         

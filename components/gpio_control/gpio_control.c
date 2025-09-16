@@ -17,7 +17,6 @@
 #define ESP_INTR_FLAG_DEFAULT  ESP_INTR_FLAG_IRAM
 #define QUEUE_DATA_LENGHT 60 // Arbitrary length for the queue to hold ISR data
 #define QUEUE_TIMEOUT 100 // Timeout in ms to wait for data from ISR
-#define DELTA_NULL_TIME 10400
 #define MAX_DELTA_TIME 2500 // 3595 the nominal value
 
 /*********************************************************
@@ -59,6 +58,9 @@ QueueHandle_t queue_grid_period = NULL;
 /** @brief Queue to send sensor pulse period time */
 QueueHandle_t queue_sensor_period = NULL;
 
+/** @brief Generator Difference Time at No Load Condition */
+static uint16_t gen_empty_diff_time = 00u;
+
 /**********************************************************
  * Function Prototypes
 **********************************************************/
@@ -70,6 +72,7 @@ void set_diff_time_feature(bool enable);
 void set_freq_monitoring_feature(bool enable);
 esp_err_t take_grid_period(QueueHandle_t queue_grid_period_main);
 esp_err_t take_sensor_period(QueueHandle_t queue_sensor_period_main);
+void set_gen_empty_time_diff(uint16_t value);
 
 /*********************************************************
  * Callbacks
@@ -100,7 +103,7 @@ static void IRAM_ATTR grid_itr_callback(void *arg)
             if((sensor_pulse_ready) && (enable_diff_time_feature))
             {
                 uint16_t time_diff = (uint16_t)(T_firstpulse_grid - sensor_pulse_moment_reference);
-                if (abs(time_diff - DELTA_NULL_TIME) >= MAX_DELTA_TIME)
+                if (abs(time_diff - gen_empty_diff_time) >= MAX_DELTA_TIME)
                 {
                     gpio_set_level(BREAKER_PIN, 1); // Open breaker
                 }
@@ -343,4 +346,9 @@ void set_freq_monitoring_feature(bool enable)
         T_firstpulse_sensor = 0;
         T_firstpulse_grid = 0;
     }
+}
+
+void set_gen_empty_time_diff(uint16_t value)
+{
+    gen_empty_diff_time = value;
 }
