@@ -49,6 +49,9 @@ static volatile bool enable_diff_time_feature = false;
 /** @brief Var to enable frequency monitoring  */
 static volatile bool enable_freq_monitoring = false;
 
+/** @brief Var to enable operational mode */
+static volatile bool operational_flag = false;
+
 /** @brief Queue to send diff time from ISR to time difference function */
 QueueHandle_t queue_time_difference = NULL;
 
@@ -70,6 +73,7 @@ void gpio_enable_interrupts(void);
 void gpio_disable_interrupts(void);
 void set_diff_time_feature(bool enable);
 void set_freq_monitoring_feature(bool enable);
+void set_operational_flag(bool value);
 esp_err_t take_grid_period(QueueHandle_t queue_grid_period_main);
 esp_err_t take_sensor_period(QueueHandle_t queue_sensor_period_main);
 void set_gen_empty_time_diff(uint16_t value);
@@ -100,14 +104,17 @@ static void IRAM_ATTR grid_itr_callback(void *arg)
             }
             
             /* Diff time ISR feature */
-            if((sensor_pulse_ready) && (enable_diff_time_feature))
+            if((sensor_pulse_ready) && (enable_diff_time_feature || operational_flag))
             {
                 uint16_t time_diff = (uint16_t)(T_firstpulse_grid - sensor_pulse_moment_reference);
-                if (abs(time_diff - gen_empty_diff_time) >= MAX_DELTA_TIME)
+                if ((abs(time_diff - gen_empty_diff_time) >= MAX_DELTA_TIME) && operational_flag)
                 {
                     gpio_set_level(BREAKER_PIN, 1); // Open breaker
                 }
-                xQueueSendFromISR(queue_time_difference, &time_diff, NULL);
+
+                /* Store the time difference if diff time monitoring mode activated */
+                if (enable_diff_time_feature)
+                    xQueueSendFromISR(queue_time_difference, &time_diff, NULL);
 
                 /* Enable sensor ISR for a new diff time cycle */
                 sensor_pulse_ready = false;
@@ -140,7 +147,7 @@ static void IRAM_ATTR sensor_itr_callback(void *arg)
             }
 
             /* Diff time ISR feature */
-            if ((!sensor_pulse_ready) && (enable_diff_time_feature))
+            if ((!sensor_pulse_ready) && (enable_diff_time_feature || operational_flag))
             {
                 /* Take time reference to calculate grid-sensor diff time */
                 sensor_pulse_moment_reference = T_firstpulse_sensor;
@@ -342,6 +349,22 @@ void set_freq_monitoring_feature(bool enable)
         triggered_process_freq_sensor = false;
         triggered_process_freq_grid = false;
 
+        /* Reset the time references */
+        T_firstpulse_sensor = 0;
+        T_firstpulse_grid = 0;
+    }
+}
+
+void set_operational_flag(bool value)
+{
+    operational_flag = value;
+
+    if (value)
+    {
+        /* Reset the triggered process flags */
+        triggered_process_freq_sensor = false;
+        triggered_process_freq_grid = false;
+    
         /* Reset the time references */
         T_firstpulse_sensor = 0;
         T_firstpulse_grid = 0;

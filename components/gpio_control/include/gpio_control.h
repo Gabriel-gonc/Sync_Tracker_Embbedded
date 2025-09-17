@@ -28,4 +28,6 @@ esp_err_t take_sensor_period(QueueHandle_t queue_sensor_period_main);
 
 void set_gen_empty_time_diff(uint16_t value);
 
+void set_operational_flag(bool value);
+
 #endif // GPIO_CONTROL_H

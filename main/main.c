@@ -186,6 +186,10 @@ void app_main(void)
                 vTaskDelay(1000 / portTICK_PERIOD_MS); //Avoid watchdog time
                 break;
             }
+            case STATE_OPERATIONAL:
+            {
+                vTaskDelay(1000 / portTICK_PERIOD_MS); //Avoid watchdog time
+            }
 
             default:
                 break;
@@ -311,12 +315,7 @@ static system_state_t trait_messages(bool hand_shaking, bool state_comp, bool ch
             
             else if (rcv_delta_null_time && !check_msg && !hand_shaking && !state_comp)
             {
-                /* Convert received value to uint16_t */
-                uint16_t value = (uint16_t) atoi((char *)udp_receive_buffer);
-                ESP_LOGI(MAIN_TAG, "Gen Empty Diff Time: %u", value);
-
-                /* Set the gen_empty_diff_time */
-                set_gen_empty_time_diff(value);
+                return MSG_RECEIVED;
             }
         }
         
@@ -403,8 +402,21 @@ static void state_transition(void)
         }
         case STATE_OPERATIONAL:
         {
+            /* Receiving and Setting Gen Empty Diff time */
             trait_messages(false, false, false, true);
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
+            
+            /* Convert received value to uint16_t */
+            uint16_t value = (uint16_t) atoi((char *)udp_receive_buffer);
+            ESP_LOGI(MAIN_TAG, "Gen Empty Diff Time: %u", value);
+
+            /* Set the gen_empty_diff_time */
+            set_gen_empty_time_diff(value);
+
+            /* Set the operational flag to allow trip signal */
+            set_operational_flag(true);
+
+            /* Enable interrupts */
+            gpio_enable_interrupts();
         }
         
         default:
