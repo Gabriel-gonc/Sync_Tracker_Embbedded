@@ -169,7 +169,7 @@ void app_main(void)
                 /* Check state exit criteria */
                 if (check_state_exit(MSG_FNSH_FREQ))
                 {
-                    /* Dable feature and interrupts */
+                    /* Disable feature and interrupts */
                     set_freq_monitoring_feature(false); 
                     gpio_disable_interrupts();
 
@@ -188,6 +188,17 @@ void app_main(void)
             }
             case STATE_OPERATIONAL:
             {
+                /* Check state exit criteria */
+                if (check_state_exit(MSG_FNSH_OP))
+                {
+                    /* Disable feature and interrupts */
+                    set_operational_flag(false); 
+                    gpio_disable_interrupts();
+
+                    /* Switch and settings for the next state */
+                    state_transition();
+                }
+
                 vTaskDelay(1000 / portTICK_PERIOD_MS); //Avoid watchdog time
             }
 
