@@ -61,19 +61,22 @@ QueueHandle_t queue_grid_period = NULL;
 /** @brief Queue to send sensor pulse period time */
 QueueHandle_t queue_sensor_period = NULL;
 
+/** @brief Queue to take Loss of Synchronism Fault */
+static QueueHandle_t GPIO_queue_loss_of_synchronism = NULL;
+
 /** @brief Generator Difference Time at No Load Condition */
 static uint16_t gen_empty_diff_time = 00u;
 
 /**********************************************************
  * Function Prototypes
 **********************************************************/
-esp_err_t gpio_init(void);
+esp_err_t gpio_init(QueueHandle_t synchronism_fault);
 esp_err_t time_difference_function(QueueHandle_t queue_time_difference_main);
 void gpio_enable_interrupts(void);
 void gpio_disable_interrupts(void);
 void set_diff_time_feature(bool enable);
 void set_freq_monitoring_feature(bool enable);
-void set_operational_flag(bool value);
+void set_operational_mode(bool value);
 esp_err_t take_grid_period(QueueHandle_t queue_grid_period_main);
 esp_err_t take_sensor_period(QueueHandle_t queue_sensor_period_main);
 void set_gen_empty_time_diff(uint16_t value);
@@ -109,9 +112,17 @@ static void IRAM_ATTR grid_itr_callback(void *arg)
                 uint16_t time_diff = (uint16_t)(T_firstpulse_grid - sensor_pulse_moment_reference);
                 if ((abs(time_diff - gen_empty_diff_time) >= MAX_DELTA_TIME) && operational_flag)
                 {
-                    gpio_set_level(BREAKER_PIN, 1); // Open breaker
-                }
+                    /* Open the circuit */
+                    gpio_set_level(BREAKER_PIN, 1); 
 
+                    /* Sign Error */
+                    bool fault = true;
+                    if (GPIO_queue_loss_of_synchronism != NULL)
+                    {
+                        xQueueSendFromISR(GPIO_queue_loss_of_synchronism, &fault, NULL);
+                    }
+
+                }
                 /* Store the time difference if diff time monitoring mode activated */
                 if (enable_diff_time_feature)
                     xQueueSendFromISR(queue_time_difference, &time_diff, NULL);
@@ -168,7 +179,7 @@ static void IRAM_ATTR sensor_itr_callback(void *arg)
 /*********************************************************
  * Public Functions
 *********************************************************/
-esp_err_t gpio_init(void)
+esp_err_t gpio_init(QueueHandle_t synchronism_fault)
 {   
     /* Create a queue to hold time difference values */
     queue_time_difference = xQueueCreate(QUEUE_DATA_LENGHT, sizeof(uint32_t));
@@ -192,6 +203,12 @@ esp_err_t gpio_init(void)
     {
         ESP_LOGE(GPIO_CONTROL_TAG, "Failed to create sensor period queue");
         return ESP_FAIL;
+    }
+
+    /* Receiving loss of synchronism queue */
+    if (GPIO_queue_loss_of_synchronism == NULL)
+    {
+        GPIO_queue_loss_of_synchronism = synchronism_fault;
     }
 
     /* Install ISR Service*/
@@ -355,7 +372,7 @@ void set_freq_monitoring_feature(bool enable)
     }
 }
 
-void set_operational_flag(bool value)
+void set_operational_mode(bool value)
 {
     operational_flag = value;
 

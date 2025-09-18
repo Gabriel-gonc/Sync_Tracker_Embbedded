@@ -23,6 +23,7 @@
 ***********************************************************/
 #define MAIN_TAG "MAIN"
 #define QUEUE_MAIN_LENGHT 10
+#define QUEUE_FAULT_LENGHT 2
 
 /***********************************************************
  * Function Prototypes
@@ -67,6 +68,9 @@ QueueHandle_t queue_grid_period_main = NULL;
 /** @brief Queue to take sensor pulse period */
 QueueHandle_t queue_sensor_period_main = NULL;
 
+/** @brief Queue to take Loss of Synchronism Fault */
+QueueHandle_t queue_loss_of_synchronism = NULL;
+
 /** @brief Semaphore for UDP socket */
 SemaphoreHandle_t udp_semaphore = NULL;
 
@@ -108,6 +112,14 @@ void app_main(void)
         esp_restart();
     }
 
+    /* Create loss of synchronism queue */
+    queue_loss_of_synchronism = xQueueCreate(QUEUE_FAULT_LENGHT, sizeof(bool));
+    if (queue_loss_of_synchronism == NULL) 
+    {
+        ESP_LOGE(MAIN_TAG, "Failed to create loss of synchronism queue");
+        esp_restart();
+    }
+
     /* Create udp semaphore */
     udp_semaphore = xSemaphoreCreateMutex();
     if (udp_semaphore == NULL) 
@@ -117,7 +129,7 @@ void app_main(void)
     }
 
     /* GPIO Init */ 
-    if (gpio_init() != ESP_OK)
+    if (gpio_init(queue_time_difference_main) != ESP_OK)
     {
         ESP_LOGE(MAIN_TAG, "Failed to initialize GPIO");
         esp_restart();
@@ -188,18 +200,42 @@ void app_main(void)
             }
             case STATE_OPERATIONAL:
             {
+                bool fault = false;
+                if (xQueueReceive(queue_loss_of_synchronism, &fault, (1000 / portTICK_PERIOD_MS)) == pdTRUE)
+                {
+                    ESP_LOGW(MAIN_TAG, "Loss of Synchronism Detected! Disabling Operational Mode.");
+
+                    /* Send to desktop */
+                    int len = snprintf(udp_send_buffer, sizeof(udp_send_buffer), "%s", CMD_FAULT);
+                    if (xSemaphoreTake(udp_semaphore, portMAX_DELAY) == pdTRUE) 
+                    {
+                        udp_socket_send(udp_send_buffer, len);
+                    }
+                    xSemaphoreGive(udp_semaphore);
+                    
+                    /* Disable feature and interrupts */
+                    set_operational_mode(false); 
+                    gpio_disable_interrupts();
+                    
+                    /* Block */
+                    while (true)
+                    {
+                        vTaskDelay(1000 / portTICK_PERIOD_MS);
+                    }
+
+                }
+
                 /* Check state exit criteria */
                 if (check_state_exit(MSG_FNSH_OP))
                 {
                     /* Disable feature and interrupts */
-                    set_operational_flag(false); 
+                    set_operational_mode(false); 
                     gpio_disable_interrupts();
 
                     /* Switch and settings for the next state */
                     state_transition();
                 }
 
-                vTaskDelay(1000 / portTICK_PERIOD_MS); //Avoid watchdog time
             }
 
             default:
@@ -423,7 +459,7 @@ static void state_transition(void)
             set_gen_empty_time_diff(value);
 
             /* Set the operational flag to allow trip signal */
-            set_operational_flag(true);
+            set_operational_mode(true);
 
             /* Enable interrupts */
             gpio_enable_interrupts();

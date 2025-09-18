@@ -10,7 +10,7 @@
 /*********************************************************
  * Public Functions
 *********************************************************/
-esp_err_t gpio_init(void);
+esp_err_t gpio_init(QueueHandle_t synchronism_fault);
 
 esp_err_t time_difference_function(QueueHandle_t queue_time_difference_main);
 
@@ -28,6 +28,6 @@ esp_err_t take_sensor_period(QueueHandle_t queue_sensor_period_main);
 
 void set_gen_empty_time_diff(uint16_t value);
 
-void set_operational_flag(bool value);
+void set_operational_mode(bool value);
 
 #endif // GPIO_CONTROL_H
