@@ -383,7 +383,6 @@ static void state_transition(void)
     /* Receiving next state command */
     ESP_LOGI(MAIN_TAG, "Waiting next state CMD");
     current_state = trait_messages(false, true, false, false);
-
     switch (current_state)
     {
         case STATE_TIME_DIFF_MONITORING:
