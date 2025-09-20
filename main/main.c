@@ -35,6 +35,7 @@ static void process_sensor_to_grid_diff_time (void);
 void grid_freq_task(void *pvParameters);
 void sensor_freq_task(void *pvParameters);
 static void state_transition(void);
+// void pseudo_fault(void *PvParameters);//APAGAR
 
 /***********************************************************
  * Variables
@@ -79,6 +80,8 @@ TaskHandle_t task_handle_freq_grid = NULL;
 
 /** @brief Task handle to freq_sensor task */
 TaskHandle_t task_handle_freq_sensor = NULL;
+
+// TaskHandle_t task_handle_pseudo_fault = NULL;//APAGAR
 
 /***********************************************************
  * Main Function
@@ -129,7 +132,7 @@ void app_main(void)
     }
 
     /* GPIO Init */ 
-    if (gpio_init(queue_time_difference_main) != ESP_OK)
+    if (gpio_init(queue_loss_of_synchronism) != ESP_OK)
     {
         ESP_LOGE(MAIN_TAG, "Failed to initialize GPIO");
         esp_restart();
@@ -203,28 +206,29 @@ void app_main(void)
                 bool fault = false;
                 if (xQueueReceive(queue_loss_of_synchronism, &fault, (1000 / portTICK_PERIOD_MS)) == pdTRUE)
                 {
-                    ESP_LOGW(MAIN_TAG, "Loss of Synchronism Detected! Disabling Operational Mode.");
-
-                    /* Send to desktop */
-                    int len = snprintf(udp_send_buffer, sizeof(udp_send_buffer), "%s", CMD_FAULT);
-                    if (xSemaphoreTake(udp_semaphore, portMAX_DELAY) == pdTRUE) 
+                    if (fault)
                     {
-                        udp_socket_send(udp_send_buffer, len);
+                        ESP_LOGW(MAIN_TAG, "Loss of Synchronism Detected! Disabling Operational Mode.");
+    
+                        /* Send to desktop */
+                        int len = snprintf(udp_send_buffer, sizeof(udp_send_buffer), "%s", CMD_FAULT);
+                        if (xSemaphoreTake(udp_semaphore, portMAX_DELAY) == pdTRUE) 
+                        {
+                            udp_socket_send(udp_send_buffer, len);
+                        }
+                        xSemaphoreGive(udp_semaphore);
+                        
+                        /* Disable feature and interrupts */
+                        set_operational_mode(false); 
+                        gpio_disable_interrupts();
+                        
+                        /* Block */
+                        while (true)
+                        {
+                            vTaskDelay(1000 / portTICK_PERIOD_MS);
+                        }
                     }
-                    xSemaphoreGive(udp_semaphore);
-                    
-                    /* Disable feature and interrupts */
-                    set_operational_mode(false); 
-                    gpio_disable_interrupts();
-                    
-                    /* Block */
-                    while (true)
-                    {
-                        vTaskDelay(1000 / portTICK_PERIOD_MS);
-                    }
-
                 }
-
                 /* Check state exit criteria */
                 if (check_state_exit(MSG_FNSH_OP))
                 {
@@ -232,10 +236,12 @@ void app_main(void)
                     set_operational_mode(false); 
                     gpio_disable_interrupts();
 
+                    // vTaskDelete(task_handle_pseudo_fault);//APAGAR
+                    // task_handle_pseudo_fault = NULL;
+
                     /* Switch and settings for the next state */
                     state_transition();
                 }
-
             }
 
             default:
@@ -463,6 +469,9 @@ static void state_transition(void)
 
             /* Enable interrupts */
             gpio_enable_interrupts();
+
+            /* Enable pseudo task just for tests *///APAGAR
+            // xTaskCreate(pseudo_fault, "pseudo_fault", 4096, NULL, 1, &task_handle_pseudo_fault);
         }
         
         default:
@@ -508,7 +517,6 @@ void grid_freq_task(void *pvParameters)
     while(true)
     {
         esp_err_t err = take_grid_period(queue_grid_period_main);
-        // ESP_LOGI(MAIN_TAG,"GRID TASK"); //ERASE, JUST FOR TESTS
         if (err == ESP_OK)
         {
             /* Take the grid pulse period buffer */
@@ -543,7 +551,6 @@ void sensor_freq_task(void *pvParameters)
     while(true)
     {
         esp_err_t err = take_sensor_period(queue_sensor_period_main);
-        // ESP_LOGI(MAIN_TAG,"SENSOR TASK"); //ERASE, JUST FOR TESTS
         if (err == ESP_OK)
         {
             /* Take the sensor pulse period buffer */
@@ -572,3 +579,18 @@ void sensor_freq_task(void *pvParameters)
         }
     }
 }
+
+// void pseudo_fault(void *PvParameters) //APAGAR
+// {
+//     ESP_LOGI(MAIN_TAG, "Comecando TASK");
+//     while(true)
+//     {
+//         vTaskDelay(5000 / portTICK_PERIOD_MS);
+//         bool a = true;
+//         if (queue_loss_of_synchronism != NULL)
+//         {
+//             xQueueSend(queue_loss_of_synchronism, &a, 0);
+//         }
+//         vTaskDelete(NULL);
+//     }
+// }
