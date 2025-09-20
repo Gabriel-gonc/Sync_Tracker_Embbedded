@@ -86,50 +86,53 @@ void set_gen_empty_time_diff(uint16_t value);
 *********************************************************/
 static void IRAM_ATTR grid_itr_callback(void *arg)
 {
-    if (!triggered_process_freq_grid)
+    if (triggered_process_freq_sensor)
     {
-        T_firstpulse_grid = esp_timer_get_time();
-        triggered_process_freq_grid = true;
-    }
-    else 
-    {
-        volatile uint64_t time_now = esp_timer_get_time();
-        delta_time_freq_grid = (uint16_t)(time_now - T_firstpulse_grid);
-        if (delta_time_freq_grid > GRID_WINDOW_FILTER) 
+        if (!triggered_process_freq_grid)
         {
-            T_firstpulse_grid = time_now;
-
-            /* Frequency monitoring feature */
-            if (enable_freq_monitoring)
+            T_firstpulse_grid = esp_timer_get_time();
+            triggered_process_freq_grid = true;
+        }
+        else 
+        {
+            volatile uint64_t time_now = esp_timer_get_time();
+            delta_time_freq_grid = (uint16_t)(time_now - T_firstpulse_grid);
+            if (delta_time_freq_grid > GRID_WINDOW_FILTER) 
             {
-                /* Store grid pulse period */
-                xQueueSendFromISR(queue_grid_period, &delta_time_freq_grid, NULL);
-            }
-            
-            /* Diff time ISR feature */
-            if((sensor_pulse_ready) && (enable_diff_time_feature || operational_flag))
-            {
-                uint16_t time_diff = (uint16_t)(T_firstpulse_grid - sensor_pulse_moment_reference);
-                if ((abs(time_diff - gen_empty_diff_time) >= MAX_DELTA_TIME) && operational_flag)
+                T_firstpulse_grid = time_now;
+    
+                /* Frequency monitoring feature */
+                if (enable_freq_monitoring)
                 {
-                    /* Open the circuit */
-                    gpio_set_level(BREAKER_PIN, 1); 
-
-                    /* Sign Error */
-                    bool fault = true;
-                    if (GPIO_queue_loss_of_synchronism != NULL)
-                    {
-                        xQueueSendFromISR(GPIO_queue_loss_of_synchronism, &fault, NULL);
-                    }
-
+                    /* Store grid pulse period */
+                    xQueueSendFromISR(queue_grid_period, &delta_time_freq_grid, NULL);
                 }
-                /* Store the time difference if diff time monitoring mode activated */
-                if (enable_diff_time_feature)
-                    xQueueSendFromISR(queue_time_difference, &time_diff, NULL);
-
-                /* Enable sensor ISR for a new diff time cycle */
-                sensor_pulse_ready = false;
-            } 
+                
+                /* Diff time ISR feature */
+                if((sensor_pulse_ready) && (enable_diff_time_feature || operational_flag))
+                {
+                    uint16_t time_diff = (uint16_t)(T_firstpulse_grid - sensor_pulse_moment_reference);
+                    if ((abs(time_diff - gen_empty_diff_time) >= MAX_DELTA_TIME) && operational_flag)
+                    {
+                        /* Open the circuit */
+                        gpio_set_level(BREAKER_PIN, 1); 
+    
+                        /* Sign Error */
+                        bool fault = true;
+                        if (GPIO_queue_loss_of_synchronism != NULL)
+                        {
+                            xQueueSendFromISR(GPIO_queue_loss_of_synchronism, &fault, NULL);
+                        }
+    
+                    }
+                    /* Store the time difference if diff time monitoring mode activated */
+                    if (enable_diff_time_feature)
+                        xQueueSendFromISR(queue_time_difference, &time_diff, NULL);
+    
+                    /* Enable sensor ISR for a new diff time cycle */
+                    sensor_pulse_ready = false;
+                } 
+            }
         }
     }
 }
@@ -161,7 +164,7 @@ static void IRAM_ATTR sensor_itr_callback(void *arg)
             if ((!sensor_pulse_ready) && (enable_diff_time_feature || operational_flag))
             {
                 /* Take time reference to calculate grid-sensor diff time */
-                sensor_pulse_moment_reference = T_firstpulse_sensor;
+                sensor_pulse_moment_reference = time_now;
 
                 /* Enable grid ISR to calculate time difference and block sensor for a new measure */
                 sensor_pulse_ready = true;
@@ -350,6 +353,8 @@ void set_diff_time_feature(bool enable)
         /* Reset the time references */
         T_firstpulse_sensor = 0;
         T_firstpulse_grid = 0;
+
+        sensor_pulse_ready = false;
     }
 }
 
@@ -385,6 +390,8 @@ void set_operational_mode(bool value)
         /* Reset the time references */
         T_firstpulse_sensor = 0;
         T_firstpulse_grid = 0;
+
+        sensor_pulse_ready = false;
     }
 }
 
