@@ -30,4 +30,6 @@ void set_gen_empty_time_diff(uint16_t value);
 
 void set_operational_mode(bool value);
 
+void delete_operation_mode_task(void);
+
 #endif // GPIO_CONTROL_H

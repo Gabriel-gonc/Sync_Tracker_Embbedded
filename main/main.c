@@ -35,7 +35,6 @@ static void process_sensor_to_grid_diff_time (void);
 void grid_freq_task(void *pvParameters);
 void sensor_freq_task(void *pvParameters);
 static void state_transition(void);
-// void pseudo_fault(void *PvParameters);//APAGAR
 
 /***********************************************************
  * Variables
@@ -81,11 +80,9 @@ TaskHandle_t task_handle_freq_grid = NULL;
 /** @brief Task handle to freq_sensor task */
 TaskHandle_t task_handle_freq_sensor = NULL;
 
-// TaskHandle_t task_handle_pseudo_fault = NULL;//APAGAR
-
-/***********************************************************
+/*-------------------------------------------------------
  * Main Function
-***********************************************************/
+**-------------------------------------------------------*/
 void app_main(void)
 {
     /* Create event group */
@@ -190,9 +187,15 @@ void app_main(void)
 
                     /* Task delete */
                     if (task_handle_freq_grid != NULL)
+                    {
                         vTaskDelete(task_handle_freq_grid);
+                        task_handle_freq_grid = NULL;
+                    }
                     if (task_handle_freq_sensor != NULL)
+                    {
                         vTaskDelete(task_handle_freq_sensor);
+                        task_handle_freq_sensor = NULL;
+                    }
                     
                     /* Switch and settings for the next state */
                     state_transition();
@@ -236,23 +239,22 @@ void app_main(void)
                     set_operational_mode(false); 
                     gpio_disable_interrupts();
 
-                    // vTaskDelete(task_handle_pseudo_fault);//APAGAR
-                    // task_handle_pseudo_fault = NULL;
+                    /* Delete operation_mode task */
+                    delete_operation_mode_task();
 
                     /* Switch and settings for the next state */
                     state_transition();
                 }
             }
-
             default:
                 break;
         }
     }
 }
 
-/***********************************************************
+/*-------------------------------------------------------
  * System Callback
-***********************************************************/
+**-------------------------------------------------------*/
 /** @brief Function to enable inter-components communication */
 static void system_callback(system_event_t event)
 {
@@ -269,9 +271,9 @@ static void system_callback(system_event_t event)
     }
 }
 
-/***********************************************************
+/*-------------------------------------------------------
  * Functions
-***********************************************************/
+**-------------------------------------------------------*/
 /** @brief Function to receive, trait and send udp control messages
  * 
  * @param hand_shaking True for hand-shaking process, false otherwise
@@ -469,9 +471,6 @@ static void state_transition(void)
 
             /* Enable interrupts */
             gpio_enable_interrupts();
-
-            /* Enable pseudo task just for tests *///APAGAR
-            // xTaskCreate(pseudo_fault, "pseudo_fault", 4096, NULL, 1, &task_handle_pseudo_fault);
         }
         
         default:
@@ -508,9 +507,9 @@ static void process_sensor_to_grid_diff_time (void)
     }
 }
 
-/***********************************************************
+/*-------------------------------------------------------
  * FreeRTOS Tasks
-***********************************************************/
+**-------------------------------------------------------*/
 
 void grid_freq_task(void *pvParameters)
 {
@@ -579,18 +578,3 @@ void sensor_freq_task(void *pvParameters)
         }
     }
 }
-
-// void pseudo_fault(void *PvParameters) //APAGAR
-// {
-//     ESP_LOGI(MAIN_TAG, "Comecando TASK");
-//     while(true)
-//     {
-//         vTaskDelay(5000 / portTICK_PERIOD_MS);
-//         bool a = true;
-//         if (queue_loss_of_synchronism != NULL)
-//         {
-//             xQueueSend(queue_loss_of_synchronism, &a, 0);
-//         }
-//         vTaskDelete(NULL);
-//     }
-// }

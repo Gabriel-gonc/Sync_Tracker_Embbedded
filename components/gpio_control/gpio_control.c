@@ -3,6 +3,7 @@
 #include "esp_timer.h"
 #include "esp_log.h"
 #include "esp_err.h"
+#include <math.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -17,7 +18,9 @@
 #define ESP_INTR_FLAG_DEFAULT  ESP_INTR_FLAG_IRAM
 #define QUEUE_DATA_LENGHT 60 // Arbitrary length for the queue to hold ISR data
 #define QUEUE_TIMEOUT 100 // Timeout in ms to wait for data from ISR
-#define MAX_DELTA_TIME 2500 // 3595 the nominal value
+#define OPER_BUFFER_LENGHT 5
+#define OPER_TIME_TOLERANCE 100 // In micros
+#define WASTE_SAMPLES 60
 
 /*********************************************************
  * Variables
@@ -52,17 +55,23 @@ static volatile bool enable_freq_monitoring = false;
 /** @brief Var to enable operational mode */
 static volatile bool operational_flag = false;
 
+/** @brief Queue to send diff time from ISR to operation_mode task */
+static QueueHandle_t queue_time_difference_oper = NULL;
+
 /** @brief Queue to send diff time from ISR to time difference function */
-QueueHandle_t queue_time_difference = NULL;
+static QueueHandle_t queue_time_difference = NULL;
 
 /** @brief Queue to send grid pulse period time */
-QueueHandle_t queue_grid_period = NULL;
+static QueueHandle_t queue_grid_period = NULL;
 
 /** @brief Queue to send sensor pulse period time */
-QueueHandle_t queue_sensor_period = NULL;
+static QueueHandle_t queue_sensor_period = NULL;
 
 /** @brief Queue to take Loss of Synchronism Fault */
 static QueueHandle_t GPIO_queue_loss_of_synchronism = NULL;
+
+/** @brief Task handle to freq_grid task */
+static TaskHandle_t task_handle_oper_mode = NULL;
 
 /** @brief Generator Difference Time at No Load Condition */
 static uint16_t gen_empty_diff_time = 00u;
@@ -70,6 +79,7 @@ static uint16_t gen_empty_diff_time = 00u;
 /**********************************************************
  * Function Prototypes
 **********************************************************/
+static void sync_fault_detected(void);
 esp_err_t gpio_init(QueueHandle_t synchronism_fault);
 esp_err_t time_difference_function(QueueHandle_t queue_time_difference_main);
 void gpio_enable_interrupts(void);
@@ -77,13 +87,15 @@ void gpio_disable_interrupts(void);
 void set_diff_time_feature(bool enable);
 void set_freq_monitoring_feature(bool enable);
 void set_operational_mode(bool value);
+void delete_operation_mode_task(void);
 esp_err_t take_grid_period(QueueHandle_t queue_grid_period_main);
 esp_err_t take_sensor_period(QueueHandle_t queue_sensor_period_main);
 void set_gen_empty_time_diff(uint16_t value);
+static void operation_mode(void *PvParameters);
 
-/*********************************************************
- * Callbacks
-*********************************************************/
+/*-------------------------------------------------------
+ * ISR Callbacks
+**-------------------------------------------------------*/
 static void IRAM_ATTR grid_itr_callback(void *arg)
 {
     if (triggered_process_freq_sensor)
@@ -111,24 +123,31 @@ static void IRAM_ATTR grid_itr_callback(void *arg)
                 /* Diff time ISR feature */
                 if((sensor_pulse_ready) && (enable_diff_time_feature || operational_flag))
                 {
+                    /* Calculate time_diff from empty value ref */
                     uint16_t time_diff = (uint16_t)(T_firstpulse_grid - sensor_pulse_moment_reference);
-                    if ((abs(time_diff - gen_empty_diff_time) >= MAX_DELTA_TIME) && operational_flag)
+
+                    /* Send the time_diff for operational mode */
+                    if (operational_flag)
                     {
-                        /* Open the circuit */
-                        gpio_set_level(BREAKER_PIN, 1); 
-    
-                        /* Sign Error */
-                        bool fault = true;
-                        if (GPIO_queue_loss_of_synchronism != NULL)
+                        /* Variable to check if a higher priority task is free */
+                        BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+                        /* Add item to the queue */
+                        xQueueSendFromISR(queue_time_difference_oper, &time_diff, &xHigherPriorityTaskWoken);
+
+                        /* Schedule the higher priority task if free */
+                        if (xHigherPriorityTaskWoken == pdTRUE)
                         {
-                            xQueueSendFromISR(GPIO_queue_loss_of_synchronism, &fault, NULL);
+                            portYIELD_FROM_ISR();
                         }
-    
                     }
-                    /* Store the time difference if diff time monitoring mode activated */
-                    if (enable_diff_time_feature)
+                    
+                    /* Send the time_diff for monitoring mode */
+                    else if (enable_diff_time_feature)
+                    {
                         xQueueSendFromISR(queue_time_difference, &time_diff, NULL);
-    
+                    }
+
                     /* Enable sensor ISR for a new diff time cycle */
                     sensor_pulse_ready = false;
                 } 
@@ -173,18 +192,36 @@ static void IRAM_ATTR sensor_itr_callback(void *arg)
     }
 }
 
-/*********************************************************
- * Private Functions
-*********************************************************/
+/*-------------------------------------------------------
+ * Local Functions
+**-------------------------------------------------------*/
+void sync_fault_detected(void)
+{
+    /* Open the circuit */
+	gpio_set_level(BREAKER_PIN, 1); 
 
+	/* Sign Error */
+	bool fault = true;
+	if (GPIO_queue_loss_of_synchronism != NULL)
+	{
+	    xQueueSendFromISR(GPIO_queue_loss_of_synchronism, &fault, NULL);
+	}
+}
 
-
-/*********************************************************
- * Public Functions
-*********************************************************/
+/*-------------------------------------------------------
+ * Functions
+**-------------------------------------------------------*/
 esp_err_t gpio_init(QueueHandle_t synchronism_fault)
 {   
-    /* Create a queue to hold time difference values */
+    /* Create a queue to hold time difference values for operation_mode task*/
+    queue_time_difference_oper = xQueueCreate(QUEUE_DATA_LENGHT, sizeof(uint32_t));
+    if (queue_time_difference_oper == NULL) 
+    {
+        ESP_LOGE(GPIO_CONTROL_TAG, "Failed to create queue");
+        return ESP_FAIL;
+    }
+
+    /* Create a queue to hold time difference values for time difference function */
     queue_time_difference = xQueueCreate(QUEUE_DATA_LENGHT, sizeof(uint32_t));
     if (queue_time_difference == NULL) 
     {
@@ -383,6 +420,9 @@ void set_operational_mode(bool value)
 
     if (value)
     {
+        /* Create the task */
+        xTaskCreate(operation_mode, "operation_mode_task", 4096, NULL, 2, &task_handle_oper_mode);
+
         /* Reset the triggered process flags */
         triggered_process_freq_sensor = false;
         triggered_process_freq_grid = false;
@@ -395,7 +435,118 @@ void set_operational_mode(bool value)
     }
 }
 
+void delete_operation_mode_task(void)
+{
+    if (task_handle_oper_mode != NULL)
+    {
+        vTaskDelete(task_handle_oper_mode);
+        task_handle_oper_mode = NULL;
+    }
+}
+
 void set_gen_empty_time_diff(uint16_t value)
 {
     gen_empty_diff_time = value;
+}
+
+/*-------------------------------------------------------
+ * FreeRTOS Tasks
+**-------------------------------------------------------*/
+static void operation_mode(void *pvParameters)
+{
+    /* Start the used variables */
+    uint32_t operation_buffer[OPER_BUFFER_LENGHT] = {0u};
+    uint32_t current_time_diff = 0u;
+    uint64_t time_diff_sum = 0u;
+    float time_diff_avg = 0.0f;
+    bool swing_flag = false;
+    float pre_fault_angle = 0;
+    uint32_t max_diff_time = 0;
+    float critic_angle_degrees = 0;
+    uint32_t critic_diff_time = 0;
+
+    /* Discard the first samples */
+    for(uint8_t i = 0; i < WASTE_SAMPLES; i++)
+    {
+        xQueueReceive(queue_time_difference_oper, &current_time_diff, portMAX_DELAY);
+    }
+
+    /* Fill the initial buffer */
+    for (uint8_t i = 0; i < OPER_BUFFER_LENGHT; i++)
+    {
+        xQueueReceive(queue_time_difference_oper, &current_time_diff, portMAX_DELAY);
+
+        /* Sum to calculate the average */
+        time_diff_sum += current_time_diff;
+    }
+
+    /* Calculate the initial average */
+    time_diff_avg = ((float)time_diff_sum) / OPER_BUFFER_LENGHT;
+
+    while (true)
+    {
+        /* Receive a new time diff */
+        xQueueReceive(queue_time_difference_oper, &current_time_diff, portMAX_DELAY);
+        
+        /* Compartion with OPER_TIME_TOLERANCE to detect power swings */
+        if ((current_time_diff - (uint32_t)(time_diff_avg) > OPER_TIME_TOLERANCE))
+        {
+            if (swing_flag)
+            {
+                if (current_time_diff > critic_diff_time)
+                {
+                    /* Fault not cleared, generate the trip signal */
+                    if ((current_time_diff - operation_buffer[0]) > (operation_buffer[0] - operation_buffer[1]))
+                    {
+                        sync_fault_detected();
+                    }
+                    else if (current_time_diff >= max_diff_time)
+                    {
+                        sync_fault_detected();
+                    }
+                }
+            }
+            else
+            {
+                /* Calculate the pre-fault angle using the last time diff value before swing in degrees */
+                pre_fault_angle = (((float)operation_buffer[0] * 360.0f) / 16667.0f);
+
+                /* Calculate the maximum diff time (which correspond to the operation_buffer[0] suplementary angle in time) */
+                max_diff_time = 8333u - operation_buffer[0];
+
+                /* Calculate the critic angle */
+                float pre_fault_angle_rad = (pre_fault_angle * M_PI) / 180.0f;
+                critic_angle_degrees = acosf(((M_PI - pre_fault_angle_rad) * sinf(pre_fault_angle_rad)) - cosf(pre_fault_angle_rad));
+                critic_angle_degrees = critic_angle_degrees * 180.0f / M_PI;
+
+                /* Calculate the critic diff time */
+                critic_diff_time = (uint32_t)(critic_angle_degrees * 8333.3f / 180.0f);
+
+                /* Assert the swing flag */
+                swing_flag = true;
+            }
+        }
+        else
+        {
+            /* Deassert the swing flag */
+            swing_flag = false;
+        }
+
+        /* Reset the buffer sum */
+        time_diff_sum = 0u;
+        
+        /* Update the operation_buffer, moving terms to open position for the new value */
+        for (uint8_t i = (OPER_BUFFER_LENGHT - 1); i > 0; i--)
+        {
+            operation_buffer[i] = operation_buffer[i - 1];
+            
+            /* Sum to calculate the average */
+            time_diff_sum += operation_buffer[i];
+        }
+        operation_buffer[0] = current_time_diff;
+        time_diff_sum += current_time_diff;
+
+        /* Update the average */
+        time_diff_avg = ((float)time_diff_sum) / OPER_BUFFER_LENGHT;
+    }
 }
