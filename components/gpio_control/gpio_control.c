@@ -6,8 +6,8 @@
 #include <math.h>
 
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "freertos/semphr.h"
-#include "freertos/queue.h"
 
 #include "project_types.h"
 
@@ -465,16 +465,18 @@ static void operation_mode(void *pvParameters)
     float critic_angle_degrees = 0;
     uint32_t critic_diff_time = 0;
 
-    /* Discard the first samples */
-    for(uint8_t i = 0; i < WASTE_SAMPLES; i++)
-    {
-        xQueueReceive(queue_time_difference_oper, &current_time_diff, portMAX_DELAY);
-    }
+    // TESTE DESCOMENTAR
+    // /* Discard the first samples */
+    // for(uint8_t i = 0; i < WASTE_SAMPLES; i++)
+    // {
+    //     xQueueReceive(queue_time_difference_oper, &current_time_diff, portMAX_DELAY);
+    // }
 
     /* Fill the initial buffer */
     for (uint8_t i = 0; i < OPER_BUFFER_LENGHT; i++)
     {
         xQueueReceive(queue_time_difference_oper, &current_time_diff, portMAX_DELAY);
+        operation_buffer[i] = current_time_diff;
 
         /* Sum to calculate the average */
         time_diff_sum += current_time_diff;
@@ -487,9 +489,12 @@ static void operation_mode(void *pvParameters)
     {
         /* Receive a new time diff */
         xQueueReceive(queue_time_difference_oper, &current_time_diff, portMAX_DELAY);
-        
-        /* Compartion with OPER_TIME_TOLERANCE to detect power swings */
-        if ((current_time_diff - (uint32_t)(time_diff_avg) > OPER_TIME_TOLERANCE))
+
+        // TESTE APAGAR
+        int64_t begin = esp_timer_get_time();
+
+        /* Comparison with OPER_TIME_TOLERANCE to detect power swings */
+        if (abs(current_time_diff - (uint32_t)(time_diff_avg)) > OPER_TIME_TOLERANCE)
         {
             if (swing_flag)
             {
@@ -498,11 +503,18 @@ static void operation_mode(void *pvParameters)
                     /* Fault not cleared, generate the trip signal */
                     if ((current_time_diff - operation_buffer[0]) > (operation_buffer[0] - operation_buffer[1]))
                     {
-                        sync_fault_detected();
+                        // sync_fault_detected();
+                        // TESTE APAGAR
+                        ESP_LOGE(TAG, "Fault due to accelerating yet");
+                        ESP_LOGI(TAG, "Current diff time: %lu", current_time_diff);
+                        vTaskDelete(NULL);
                     }
                     else if (current_time_diff >= max_diff_time)
                     {
-                        sync_fault_detected();
+                        // sync_fault_detected();
+                        // TESTE APAGAR
+                        ESP_LOGE(TAG, "Fault due to angle overflow");
+                        vTaskDelete(NULL);
                     }
                 }
             }
@@ -516,7 +528,7 @@ static void operation_mode(void *pvParameters)
 
                 /* Calculate the critic angle */
                 float pre_fault_angle_rad = (pre_fault_angle * M_PI) / 180.0f;
-                critic_angle_degrees = acosf(((M_PI - pre_fault_angle_rad) * sinf(pre_fault_angle_rad)) - cosf(pre_fault_angle_rad));
+                critic_angle_degrees = acosf(((M_PI - 2.0 * pre_fault_angle_rad) * sinf(pre_fault_angle_rad)) - cosf(pre_fault_angle_rad));
                 critic_angle_degrees = critic_angle_degrees * 180.0f / M_PI;
 
                 /* Calculate the critic diff time */
@@ -524,6 +536,9 @@ static void operation_mode(void *pvParameters)
 
                 /* Assert the swing flag */
                 swing_flag = true;
+
+                // TESTE APAGAR
+                ESP_LOGI(TAG, "Power Swing Detected. Pre fault diff time: %lu, Pre-fault angle: %f , max_diff_time: %lu, critic_angle_deg: %f, critic_diff_time: %lu", operation_buffer[0], pre_fault_angle, max_diff_time, critic_angle_degrees, critic_diff_time);
             }
         }
         else
@@ -531,7 +546,7 @@ static void operation_mode(void *pvParameters)
             /* Deassert the swing flag */
             swing_flag = false;
         }
-
+        
         /* Reset the buffer sum */
         time_diff_sum = 0u;
         
@@ -544,9 +559,13 @@ static void operation_mode(void *pvParameters)
             time_diff_sum += operation_buffer[i];
         }
         operation_buffer[0] = current_time_diff;
-        time_diff_sum += current_time_diff;
+        time_diff_sum += current_time_diff; 
 
         /* Update the average */
-        time_diff_avg = ((float)time_diff_sum) / OPER_BUFFER_LENGHT;
+        time_diff_avg = ((float)time_diff_sum) / OPER_BUFFER_LENGHT;   
+
+        // TESTE APAGAR
+        int64_t tempo = esp_timer_get_time() - begin;
+        ESP_LOGI(TAG, "Tempo gasto: %lld, Valor: %lu", tempo, current_time_diff);
     }
 }
