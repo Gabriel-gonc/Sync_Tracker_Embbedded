@@ -18,8 +18,8 @@
 #define ESP_INTR_FLAG_DEFAULT  ESP_INTR_FLAG_IRAM
 #define QUEUE_DATA_LENGHT 60 // Arbitrary length for the queue to hold ISR data
 #define QUEUE_TIMEOUT 100 // Timeout in ms to wait for data from ISR
-#define OPER_BUFFER_LENGHT 5
-#define OPER_TIME_TOLERANCE 100 // In micros
+#define OPER_BUFFER_LENGHT 16
+#define OPER_TIME_TOLERANCE 150 // In micros
 #define WASTE_SAMPLES 60
 
 /*********************************************************
@@ -420,6 +420,9 @@ void set_operational_mode(bool value)
 
     if (value)
     {
+        /* Clean the diff time queue */
+        xQueueReset(queue_time_difference_oper);
+
         /* Create the task */
         xTaskCreate(operation_mode, "operation_mode_task", 4096, NULL, 2, &task_handle_oper_mode);
 
@@ -431,6 +434,7 @@ void set_operational_mode(bool value)
         T_firstpulse_sensor = 0;
         T_firstpulse_grid = 0;
 
+        /* Reset grid to sensor pulse sync flag */
         sensor_pulse_ready = false;
     }
 }
@@ -465,12 +469,11 @@ static void operation_mode(void *pvParameters)
     float critic_angle_degrees = 0;
     uint32_t critic_diff_time = 0;
 
-    // TESTE DESCOMENTAR
-    // /* Discard the first samples */
-    // for(uint8_t i = 0; i < WASTE_SAMPLES; i++)
-    // {
-    //     xQueueReceive(queue_time_difference_oper, &current_time_diff, portMAX_DELAY);
-    // }
+    /* Discard the first samples */
+    for(uint8_t i = 0; i < WASTE_SAMPLES; i++)
+    {
+        xQueueReceive(queue_time_difference_oper, &current_time_diff, portMAX_DELAY);
+    }
 
     /* Fill the initial buffer */
     for (uint8_t i = 0; i < OPER_BUFFER_LENGHT; i++)
@@ -490,9 +493,6 @@ static void operation_mode(void *pvParameters)
         /* Receive a new time diff */
         xQueueReceive(queue_time_difference_oper, &current_time_diff, portMAX_DELAY);
 
-        // TESTE APAGAR
-        int64_t begin = esp_timer_get_time();
-
         /* Comparison with OPER_TIME_TOLERANCE to detect power swings */
         if (abs(current_time_diff - (uint32_t)(time_diff_avg)) > OPER_TIME_TOLERANCE)
         {
@@ -503,17 +503,12 @@ static void operation_mode(void *pvParameters)
                     /* Fault not cleared, generate the trip signal */
                     if ((current_time_diff - operation_buffer[0]) > (operation_buffer[0] - operation_buffer[1]))
                     {
-                        // sync_fault_detected();
-                        // TESTE APAGAR
-                        ESP_LOGE(TAG, "Fault due to accelerating yet");
-                        ESP_LOGI(TAG, "Current diff time: %lu", current_time_diff);
+                        sync_fault_detected();
                         vTaskDelete(NULL);
                     }
                     else if (current_time_diff >= max_diff_time)
                     {
-                        // sync_fault_detected();
-                        // TESTE APAGAR
-                        ESP_LOGE(TAG, "Fault due to angle overflow");
+                        sync_fault_detected();
                         vTaskDelete(NULL);
                     }
                 }
@@ -536,9 +531,6 @@ static void operation_mode(void *pvParameters)
 
                 /* Assert the swing flag */
                 swing_flag = true;
-
-                // TESTE APAGAR
-                ESP_LOGI(TAG, "Power Swing Detected. Pre fault diff time: %lu, Pre-fault angle: %f , max_diff_time: %lu, critic_angle_deg: %f, critic_diff_time: %lu", operation_buffer[0], pre_fault_angle, max_diff_time, critic_angle_degrees, critic_diff_time);
             }
         }
         else
@@ -563,9 +555,5 @@ static void operation_mode(void *pvParameters)
 
         /* Update the average */
         time_diff_avg = ((float)time_diff_sum) / OPER_BUFFER_LENGHT;   
-
-        // TESTE APAGAR
-        int64_t tempo = esp_timer_get_time() - begin;
-        ESP_LOGI(TAG, "Tempo gasto: %lld, Valor: %lu", tempo, current_time_diff);
     }
 }
