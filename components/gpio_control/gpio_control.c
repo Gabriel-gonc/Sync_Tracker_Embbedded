@@ -18,7 +18,7 @@
 #define ESP_INTR_FLAG_DEFAULT  ESP_INTR_FLAG_IRAM
 #define QUEUE_DATA_LENGHT 60 // Arbitrary length for the queue to hold ISR data
 #define QUEUE_TIMEOUT 100 // Timeout in ms to wait for data from ISR
-#define OPER_BUFFER_LENGHT 16
+#define OPER_BUFFER_LENGHT 20
 #define OPER_TIME_TOLERANCE 150 // In micros
 #define WASTE_SAMPLES 60
 
@@ -37,11 +37,6 @@ static volatile uint64_t T_firstpulse_grid = 0;
 /** @brief Variable to set reference to calculate time difference
  *          between sensor and grid pulses  */
 static volatile uint64_t sensor_pulse_moment_reference = 0;
-
-/** @brief Variable to store the pulse period 
- *          for both sensor and grid */
-static uint16_t delta_time_freq_sensor = 0;
-static uint16_t delta_time_freq_grid = 0;
 
 /** @brief Var to sign sensor pulse ready to calculate time difference */
 static volatile bool sensor_pulse_ready = false;
@@ -74,7 +69,7 @@ static QueueHandle_t GPIO_queue_loss_of_synchronism = NULL;
 static TaskHandle_t task_handle_oper_mode = NULL;
 
 /** @brief Generator Difference Time at No Load Condition */
-static uint16_t gen_empty_diff_time = 00u;
+static int16_t gen_empty_diff_time = 00u;
 
 /**********************************************************
  * Function Prototypes
@@ -90,7 +85,7 @@ void set_operational_mode(bool value);
 void delete_operation_mode_task(void);
 esp_err_t take_grid_period(QueueHandle_t queue_grid_period_main);
 esp_err_t take_sensor_period(QueueHandle_t queue_sensor_period_main);
-void set_gen_empty_time_diff(uint16_t value);
+void set_gen_empty_time_diff(int16_t value);
 static void operation_mode(void *PvParameters);
 
 /*-------------------------------------------------------
@@ -108,7 +103,7 @@ static void IRAM_ATTR grid_itr_callback(void *arg)
         else 
         {
             volatile uint64_t time_now = esp_timer_get_time();
-            delta_time_freq_grid = (uint16_t)(time_now - T_firstpulse_grid);
+            int16_t delta_time_freq_grid = (int16_t)(time_now - T_firstpulse_grid);
             if (delta_time_freq_grid > GRID_WINDOW_FILTER) 
             {
                 T_firstpulse_grid = time_now;
@@ -124,13 +119,16 @@ static void IRAM_ATTR grid_itr_callback(void *arg)
                 if((sensor_pulse_ready) && (enable_diff_time_feature || operational_flag))
                 {
                     /* Calculate time_diff from empty value ref */
-                    uint16_t time_diff = (uint16_t)(T_firstpulse_grid - sensor_pulse_moment_reference);
+                    int16_t time_diff = (int16_t)(T_firstpulse_grid - sensor_pulse_moment_reference);
 
                     /* Send the time_diff for operational mode */
                     if (operational_flag)
                     {
                         /* Variable to check if a higher priority task is free */
                         BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+                        /* Compesating the empty diff time */
+                        time_diff = time_diff - gen_empty_diff_time;
 
                         /* Add item to the queue */
                         xQueueSendFromISR(queue_time_difference_oper, &time_diff, &xHigherPriorityTaskWoken);
@@ -166,7 +164,7 @@ static void IRAM_ATTR sensor_itr_callback(void *arg)
     else 
     {
         volatile uint64_t time_now = esp_timer_get_time();
-        delta_time_freq_sensor = (uint16_t)(time_now - T_firstpulse_sensor);
+        uint16_t delta_time_freq_sensor = (uint16_t)(time_now - T_firstpulse_sensor);
         if (delta_time_freq_sensor > SENSOR_WINDOW_FILTER)
         {
             /* Update period time reference */
@@ -214,7 +212,7 @@ void sync_fault_detected(void)
 esp_err_t gpio_init(QueueHandle_t synchronism_fault)
 {   
     /* Create a queue to hold time difference values for operation_mode task*/
-    queue_time_difference_oper = xQueueCreate(QUEUE_DATA_LENGHT, sizeof(uint32_t));
+    queue_time_difference_oper = xQueueCreate(QUEUE_DATA_LENGHT, sizeof(int16_t));
     if (queue_time_difference_oper == NULL) 
     {
         ESP_LOGE(GPIO_CONTROL_TAG, "Failed to create queue");
@@ -222,7 +220,7 @@ esp_err_t gpio_init(QueueHandle_t synchronism_fault)
     }
 
     /* Create a queue to hold time difference values for time difference function */
-    queue_time_difference = xQueueCreate(QUEUE_DATA_LENGHT, sizeof(uint32_t));
+    queue_time_difference = xQueueCreate(QUEUE_DATA_LENGHT, sizeof(int16_t));
     if (queue_time_difference == NULL) 
     {
         ESP_LOGE(GPIO_CONTROL_TAG, "Failed to create queue");
@@ -230,7 +228,7 @@ esp_err_t gpio_init(QueueHandle_t synchronism_fault)
     }
 
     /* Create a queue to hold grid pulse period values */
-    queue_grid_period = xQueueCreate(QUEUE_DATA_LENGHT, sizeof(uint32_t));
+    queue_grid_period = xQueueCreate(QUEUE_DATA_LENGHT, sizeof(int16_t));
     if (queue_grid_period == NULL) 
     {
         ESP_LOGE(GPIO_CONTROL_TAG, "Failed to create grid period queue");
@@ -238,7 +236,7 @@ esp_err_t gpio_init(QueueHandle_t synchronism_fault)
     }
 
     /* Create a queue to hold sensor pulse period values */
-    queue_sensor_period = xQueueCreate(QUEUE_DATA_LENGHT, sizeof(uint32_t));
+    queue_sensor_period = xQueueCreate(QUEUE_DATA_LENGHT, sizeof(uint16_t));
     if (queue_sensor_period == NULL) 
     {
         ESP_LOGE(GPIO_CONTROL_TAG, "Failed to create sensor period queue");
@@ -293,8 +291,8 @@ esp_err_t gpio_init(QueueHandle_t synchronism_fault)
 esp_err_t time_difference_function(QueueHandle_t queue_time_difference_main)
 {
     /* Fill diff buffer with data from ISR */
-    uint16_t time_diff[NUM_CYCLES_DIFF_PULSE] = {0};
-    for (uint16_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
+    int16_t time_diff[NUM_CYCLES_DIFF_PULSE] = {0};
+    for (uint8_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
     {
         if (xQueueReceive(queue_time_difference, &time_diff[i], (QUEUE_TIMEOUT / portTICK_PERIOD_MS)) != pdTRUE)
         { 
@@ -316,9 +314,9 @@ esp_err_t time_difference_function(QueueHandle_t queue_time_difference_main)
 esp_err_t take_grid_period(QueueHandle_t queue_grid_period_main)
 {  
     /* Fill grid period buffer with data from ISR */
-    uint16_t grid_period[GRID_FREQUENCY_BUFFER_SIZE] = {0};
+    int16_t grid_period[GRID_FREQUENCY_BUFFER_SIZE] = {0};
     grid_period[0] = 1;
-    for (uint16_t i = 1; i < (GRID_FREQUENCY_BUFFER_SIZE); i++)
+    for (uint8_t i = 1; i < (GRID_FREQUENCY_BUFFER_SIZE); i++)
     {
         if (xQueueReceive(queue_grid_period, &grid_period[i], (QUEUE_TIMEOUT / portTICK_PERIOD_MS)) != pdTRUE)
         {
@@ -342,7 +340,7 @@ esp_err_t take_sensor_period(QueueHandle_t queue_sensor_period_main)
     /* Fill sensor period buffer with data from ISR */
     uint16_t sensor_period[SENSOR_FREQUENCY_BUFFER_SIZE] = {0};
     sensor_period[0] = 2;
-    for (uint16_t i = 1; i < SENSOR_FREQUENCY_BUFFER_SIZE; i++)
+    for (uint8_t i = 1; i < SENSOR_FREQUENCY_BUFFER_SIZE; i++)
     {
         if (xQueueReceive(queue_sensor_period, &sensor_period[i], (QUEUE_TIMEOUT / portTICK_PERIOD_MS)) != pdTRUE)
         {
@@ -448,7 +446,7 @@ void delete_operation_mode_task(void)
     }
 }
 
-void set_gen_empty_time_diff(uint16_t value)
+void set_gen_empty_time_diff(int16_t value)
 {
     gen_empty_diff_time = value;
 }
@@ -459,15 +457,15 @@ void set_gen_empty_time_diff(uint16_t value)
 static void operation_mode(void *pvParameters)
 {
     /* Start the used variables */
-    uint32_t operation_buffer[OPER_BUFFER_LENGHT] = {0u};
-    uint32_t current_time_diff = 0u;
+    int16_t operation_buffer[OPER_BUFFER_LENGHT] = {0u};
+    int16_t current_time_diff = 0u;
     uint64_t time_diff_sum = 0u;
     float time_diff_avg = 0.0f;
     bool swing_flag = false;
     float pre_fault_angle = 0;
-    uint32_t max_diff_time = 0;
+    int16_t max_diff_time = 0;
     float critic_angle_degrees = 0;
-    uint32_t critic_diff_time = 0;
+    int16_t critic_diff_time = 0;
 
     /* Discard the first samples */
     for(uint8_t i = 0; i < WASTE_SAMPLES; i++)
@@ -494,7 +492,7 @@ static void operation_mode(void *pvParameters)
         xQueueReceive(queue_time_difference_oper, &current_time_diff, portMAX_DELAY);
 
         /* Comparison with OPER_TIME_TOLERANCE to detect power swings */
-        if (abs(current_time_diff - (uint32_t)(time_diff_avg)) > OPER_TIME_TOLERANCE)
+        if (abs(current_time_diff - (int16_t)(time_diff_avg)) > OPER_TIME_TOLERANCE)
         {
             if (swing_flag)
             {

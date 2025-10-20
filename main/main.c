@@ -40,10 +40,10 @@ static void state_transition(void);
  * Variables
 ***********************************************************/
 /** @brief Array to store the time difference between sensor and grid pulses */
-static uint16_t time_difference[NUM_CYCLES_DIFF_PULSE] = {0};
+static int16_t time_difference[NUM_CYCLES_DIFF_PULSE] = {0};
 
 /** @brief Array to store grid pulse periods. */
-static uint16_t time_array_freq_grid[GRID_FREQUENCY_BUFFER_SIZE] = {0};
+static int16_t time_array_freq_grid[GRID_FREQUENCY_BUFFER_SIZE] = {0};
 
 /** @brief Array to store sensor pulse periods. */
 static uint16_t time_array_freq_sensor[SENSOR_FREQUENCY_BUFFER_SIZE] = {0};
@@ -459,8 +459,8 @@ static void state_transition(void)
             /* Receiving and Setting Gen Empty Diff time */
             trait_messages(false, false, false, true);
             
-            /* Convert received value to uint16_t */
-            uint16_t value = (uint16_t) atoi((char *)udp_receive_buffer);
+            /* Convert received value to int16_t */
+            int16_t value = (int16_t) atoi((char *)udp_receive_buffer);
             ESP_LOGI(MAIN_TAG, "Gen Empty Diff Time: %u", value);
 
             /* Set the gen_empty_diff_time */
@@ -491,7 +491,7 @@ static void process_sensor_to_grid_diff_time (void)
         
         /* Format the data to transmit */
         uint16_t pos = 0;
-        for (uint16_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
+        for (uint8_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
         {
             int len = snprintf((udp_send_buffer + pos), (sizeof(udp_send_buffer) - pos), "%u,", time_difference[i]);
             pos += len;
@@ -525,7 +525,7 @@ void grid_freq_task(void *pvParameters)
             {
                 /* Format the data to transmit */
                 uint16_t pos = 0;
-                for (uint16_t i = 0; i < GRID_FREQUENCY_BUFFER_SIZE; i++)
+                for (uint8_t i = 0; i < GRID_FREQUENCY_BUFFER_SIZE; i++)
                 {
                     int len = snprintf((udp_send_buffer + pos), (sizeof(udp_send_buffer) - pos), "%u,", time_array_freq_grid[i]);
                     pos += len;
@@ -559,7 +559,7 @@ void sensor_freq_task(void *pvParameters)
             {
                 /* Format the data to transmit */
                 uint16_t pos = 0;
-                for (uint16_t i = 0; i < SENSOR_FREQUENCY_BUFFER_SIZE; i++)
+                for (uint8_t i = 0; i < SENSOR_FREQUENCY_BUFFER_SIZE; i++)
                 {
                     int len = snprintf((udp_send_buffer + pos), (sizeof(udp_send_buffer) - pos), "%u,", time_array_freq_sensor[i]);
                     pos += len;
