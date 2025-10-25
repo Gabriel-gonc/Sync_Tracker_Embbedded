@@ -72,6 +72,8 @@ static TaskHandle_t task_handle_oper_mode = NULL;
 /** @brief Generator Difference Time at No Load Condition */
 static int16_t gen_empty_diff_time = 00u;
 
+static bool operated = false;
+
 /**********************************************************
  * Function Prototypes
 **********************************************************/
@@ -122,14 +124,14 @@ static void IRAM_ATTR grid_itr_callback(void *arg)
                     /* Calculate time_diff from empty value ref */
                     int16_t time_diff = (int16_t)(T_firstpulse_grid - sensor_pulse_moment_reference);
 
+                    /* Compesating the empty diff time */
+                    time_diff = time_diff - gen_empty_diff_time;
+
                     /* Send the time_diff for operational mode */
-                    if (operational_flag)
+                    if (operational_flag && !operated)
                     {
                         /* Variable to check if a higher priority task is free */
                         BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
-                        /* Compesating the empty diff time */
-                        time_diff = time_diff - gen_empty_diff_time;
 
                         /* Add item to the queue */
                         xQueueSendFromISR(queue_time_difference_oper, &time_diff, &xHigherPriorityTaskWoken);
@@ -142,8 +144,9 @@ static void IRAM_ATTR grid_itr_callback(void *arg)
                     }
                     
                     /* Send the time_diff for monitoring mode */
-                    else if (enable_diff_time_feature)
+                    if (enable_diff_time_feature)
                     {
+                        time_diff = time_diff + gen_empty_diff_time;
                         xQueueSendFromISR(queue_time_difference, &time_diff, NULL);
                     }
 
@@ -199,12 +202,14 @@ void sync_fault_detected(void)
     /* Open the circuit */
 	gpio_set_level(BREAKER_PIN, 1); 
 
+    operated = true;
+
 	/* Sign Error */
-	bool fault = true;
-	if (GPIO_queue_loss_of_synchronism != NULL)
-	{
-	    xQueueSendFromISR(GPIO_queue_loss_of_synchronism, &fault, NULL);
-	}
+	// bool fault = true;
+	// if (GPIO_queue_loss_of_synchronism != NULL)
+	// {
+	//     xQueueSendFromISR(GPIO_queue_loss_of_synchronism, &fault, NULL);
+	// }
 }
 
 /*-------------------------------------------------------

@@ -434,6 +434,13 @@ static void state_transition(void)
             /* Clean diff time main queue */
             xQueueReset(queue_time_difference_main);
 
+            /* MODIFICACAO PARA VER OS DADOS DE ATUAÇÃO */
+            /* Set the gen_empty_diff_time */
+            set_gen_empty_time_diff(5210u);
+
+            /* Set the operational flag to allow trip signal */
+            set_operational_mode(true);
+
             /* Enable diff time monitoring feature and interrupts */
             set_diff_time_feature(true); 
             gpio_enable_interrupts();
@@ -493,7 +500,7 @@ static void process_sensor_to_grid_diff_time (void)
         uint16_t pos = 0;
         for (uint8_t i = 0; i < NUM_CYCLES_DIFF_PULSE; i++)
         {
-            int len = snprintf((udp_send_buffer + pos), (sizeof(udp_send_buffer) - pos), "%u,", time_difference[i]);
+            int len = snprintf((udp_send_buffer + pos), (sizeof(udp_send_buffer) - pos), "%d,", time_difference[i]);
             pos += len;
         }
     
