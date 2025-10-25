@@ -21,6 +21,7 @@
 #define OPER_BUFFER_LENGHT 20
 #define OPER_TIME_TOLERANCE 150 // In micros
 #define WASTE_SAMPLES 60
+#define POWER_SWING_PERIOD ((1) * 1000 * 1000) // In micros
 
 /*********************************************************
  * Variables
@@ -466,6 +467,7 @@ static void operation_mode(void *pvParameters)
     int16_t max_diff_time = 0;
     float critic_angle_degrees = 0;
     int16_t critic_diff_time = 0;
+    int64_t swing_time_ref = 0;
 
     /* Discard the first samples */
     for(uint8_t i = 0; i < WASTE_SAMPLES; i++)
@@ -529,12 +531,18 @@ static void operation_mode(void *pvParameters)
 
                 /* Assert the swing flag */
                 swing_flag = true;
+
+                /* Take the power swing ref time */
+                swing_time_ref = esp_timer_get_time();
             }
         }
         else
         {
-            /* Deassert the swing flag */
-            swing_flag = false;
+            if ((esp_timer_get_time() - swing_time_ref) > (int64_t)POWER_SWING_PERIOD)
+            {
+                /* Deassert the swing flag */
+                swing_flag = false;
+            }
         }
         
         /* Reset the buffer sum */
