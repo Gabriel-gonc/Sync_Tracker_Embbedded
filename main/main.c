@@ -170,6 +170,9 @@ void app_main(void)
                     /* Disable feature and interrupts */
                     set_diff_time_feature(false); 
                     gpio_disable_interrupts();
+
+                    /* Delete operation_mode task */
+                    delete_operation_mode_task();
                     
                     /* Switch and settings for the next state */
                     state_transition();
@@ -235,8 +238,7 @@ void app_main(void)
                 /* Check state exit criteria */
                 if (check_state_exit(MSG_FNSH_OP))
                 {
-                    /* Disable feature and interrupts */
-                    set_operational_mode(false); 
+                    /* Disable interrupts */
                     gpio_disable_interrupts();
 
                     /* Delete operation_mode task */
@@ -433,13 +435,28 @@ static void state_transition(void)
         {
             /* Clean diff time main queue */
             xQueueReset(queue_time_difference_main);
+            ESP_LOGI(MAIN_TAG, "ESPERANDO DIFF TIME");
+            /* Receiving and Setting Gen Empty Diff time */
+            trait_messages(false, false, false, true);
+            ESP_LOGI(MAIN_TAG, "RECEBIDO DIFF TIME");
+            /* Convert received value to int16_t */
+            int16_t value = (int16_t) atoi((char *)udp_receive_buffer);
+            ESP_LOGI(MAIN_TAG, "Gen Empty Diff Time: %d", value);
 
-            /* MODIFICACAO PARA VER OS DADOS DE ATUAÇÃO */
-            /* Set the gen_empty_diff_time */
-            set_gen_empty_time_diff(5210u);
+            /* Enable operation mode */
+            if (value > 0)
+            {
+                /* Set the gen_empty_diff_time */
+                set_gen_empty_time_diff(value);
 
-            /* Set the operational flag to allow trip signal */
-            set_operational_mode(true);
+                /* Set the operational flag to allow trip signal */
+                set_operational_mode(true);
+            }
+            else
+            {
+                /* Set the gen_empty_diff_time as zero */
+                set_gen_empty_time_diff(0);
+            }
 
             /* Enable diff time monitoring feature and interrupts */
             set_diff_time_feature(true); 
@@ -463,12 +480,15 @@ static void state_transition(void)
         }
         case STATE_OPERATIONAL:
         {
+            /* Clean loss of synchronism queue */
+            xQueueReset(queue_loss_of_synchronism);
+
             /* Receiving and Setting Gen Empty Diff time */
             trait_messages(false, false, false, true);
             
             /* Convert received value to int16_t */
             int16_t value = (int16_t) atoi((char *)udp_receive_buffer);
-            ESP_LOGI(MAIN_TAG, "Gen Empty Diff Time: %u", value);
+            ESP_LOGI(MAIN_TAG, "Gen Empty Diff Time: %d", value);
 
             /* Set the gen_empty_diff_time */
             set_gen_empty_time_diff(value);
