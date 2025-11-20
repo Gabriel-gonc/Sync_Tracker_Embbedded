@@ -478,6 +478,8 @@ static void state_transition(void)
 
             /* Enable interrupts */
             gpio_enable_interrupts();
+
+            break;
         }
         
         default:
